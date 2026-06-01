@@ -46,7 +46,6 @@ class App {
         const lat = Math.asin(localPoint.y) * (180 / Math.PI);
         let lng = -Math.atan2(localPoint.z, localPoint.x) * (180 / Math.PI);
 
-        lng += 90;
         if (lng > 180) lng -= 360;
         if (lng < -180) lng += 360;
 

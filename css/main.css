@@ -251,3 +251,22 @@ h3::before {
     background: var(--primary);
     border-radius: 50%;
 }
+
+/* 高科技国家名称浮动标签 */
+.country-label {
+    font-family: 'Outfit', sans-serif;
+    color: rgba(0, 240, 255, 0.85);
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    padding: 2px 6px;
+    background: rgba(3, 7, 18, 0.65);
+    border: 1px solid rgba(0, 240, 255, 0.25);
+    border-radius: 4px;
+    pointer-events: none;
+    white-space: nowrap;
+    transition: opacity 0.3s ease;
+    box-shadow: 0 0 10px rgba(0, 240, 255, 0.15);
+    text-shadow: 0 0 4px rgba(0, 240, 255, 0.6);
+}
