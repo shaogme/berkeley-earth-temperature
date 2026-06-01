@@ -16,6 +16,7 @@ export class GlobeViewer {
         this.labelRenderer.domElement.style.position = 'absolute';
         this.labelRenderer.domElement.style.top = '0px';
         this.labelRenderer.domElement.style.pointerEvents = 'none';
+        this.labelRenderer.domElement.style.zIndex = '1';
         document.body.appendChild(this.labelRenderer.domElement);
 
         this.clock = new THREE.Clock();
