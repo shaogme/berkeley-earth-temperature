@@ -38,6 +38,7 @@ export class GlobeViewer {
         this.mouse = new THREE.Vector2();
         this.currentTempData = null;
         this.initTooltip();
+        this.initContextMenu();
     }
 
     initLights() {
@@ -331,6 +332,16 @@ export class GlobeViewer {
 
     // 鼠标移动时执行射线检测与温度值查询
     onMouseMove(event) {
+        const overlay = document.getElementById('chart-overlay');
+        if (overlay && overlay.style.display !== 'none') {
+            this.tooltipEl.style.display = 'none';
+            return;
+        }
+        const ctxMenu = document.getElementById('context-menu');
+        if (ctxMenu && ctxMenu.style.display !== 'none') {
+            this.tooltipEl.style.display = 'none';
+            return;
+        }
         if (!this.earth || !this.currentTempData) {
             this.tooltipEl.style.display = 'none';
             return;
@@ -392,5 +403,46 @@ export class GlobeViewer {
 
         // 未击中地球或击中无效网格点，隐藏 Tooltip
         this.tooltipEl.style.display = 'none';
+    }
+
+    initContextMenu() {
+        this.renderer.domElement.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            const info = this.getLatLonFromClick(e);
+            if (info) {
+                const customEvent = new CustomEvent('globe-contextmenu', {
+                    detail: {
+                        lat: info.lat,
+                        lon: info.lon,
+                        latIdx: info.latIdx,
+                        lonIdx: info.lonIdx,
+                        clientX: e.clientX,
+                        clientY: e.clientY
+                    }
+                });
+                window.dispatchEvent(customEvent);
+            }
+        });
+    }
+
+    getLatLonFromClick(event) {
+        if (!this.earth) return null;
+
+        this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+        this.raycaster.setFromCamera(this.mouse, this.camera);
+        const intersects = this.raycaster.intersectObject(this.earth);
+
+        if (intersects.length > 0) {
+            const uv = intersects[0].uv;
+            if (!uv) return null;
+            const lonIdx = Math.floor(uv.x * 360) % 360;
+            const latIdx = Math.floor(uv.y * 180) % 180;
+            const lat = uv.y * 180 - 90;
+            const lon = uv.x * 360 - 180;
+            return { lat, lon, latIdx, lonIdx };
+        }
+        return null;
     }
 }

@@ -8,11 +8,13 @@
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800&family=Outfit:wght@300;400;500;700&display=swap" rel="stylesheet">
     <!-- 引入自定义高科技样式 -->
     <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/chart-modal.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
     <!-- 引入纯前端 WebAssembly HDF5/NetCDF-4 读取库 h5wasm (本地离线版本) -->
     <script src="js/h5wasm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 </head>
 <body>
 
@@ -96,6 +98,56 @@
         <span>左键拖拽旋转地球以观察全球温度流动</span>
         <span>鼠标滚轮缩放视图</span>
         <span id="data-status">WASM 数据引擎就绪</span>
+    </div>
+
+    <!-- 右键上下文菜单 -->
+    <div id="context-menu" class="context-menu" style="display:none;">
+        <div class="context-menu-item" id="ctx-view-chart">
+            <span class="ctx-icon">📊</span>
+            <span>查看该位置温度变化曲线</span>
+        </div>
+    </div>
+
+    <!-- 图表弹窗遮罩层 -->
+    <div id="chart-overlay" class="chart-overlay" style="display:none;">
+        <div class="chart-modal">
+            <button class="chart-close-btn" id="chart-close-btn">✕</button>
+            <div class="chart-modal-title">温度变化曲线分析</div>
+            <div class="chart-coords" id="chart-coords">纬度: --°  经度: --°</div>
+
+            <div class="chart-mode-group">
+                <label class="chart-radio">
+                    <input type="radio" name="chart-mode" value="annual" checked>
+                    <span class="chart-radio-label">按年查看</span>
+                </label>
+                <label class="chart-radio">
+                    <input type="radio" name="chart-mode" value="monthly">
+                    <span class="chart-radio-label">按月查看</span>
+                </label>
+            </div>
+
+            <div class="chart-range-group" id="chart-range-annual">
+                <div class="chart-range-item">
+                    <label class="chart-range-label">起始年份</label>
+                    <select id="chart-start-year" class="chart-select"></select>
+                </div>
+                <div class="chart-range-item">
+                    <label class="chart-range-label">结束年份</label>
+                    <select id="chart-end-year" class="chart-select"></select>
+                </div>
+            </div>
+
+            <div class="chart-range-group" id="chart-range-monthly" style="display:none;">
+                <div class="chart-range-item">
+                    <label class="chart-range-label">选择年份</label>
+                    <select id="chart-target-year" class="chart-select"></select>
+                </div>
+            </div>
+
+            <button class="chart-render-btn" id="chart-render-btn">生成图表</button>
+
+            <div class="chart-container-wrapper" id="chart-container"></div>
+        </div>
     </div>
 
     <!-- 引入主应用模块 -->

@@ -1,4 +1,5 @@
 import { GlobeViewer } from './globe-viewer.js';
+import { TemperatureChart } from './temperature-chart.js';
 
 class App {
     constructor() {
@@ -22,9 +23,15 @@ class App {
         this.opacityVal = document.getElementById('opacity-val');
         this.dataStatus = document.getElementById('data-status');
 
+        this.contextMenu = document.getElementById('context-menu');
+        this.ctxViewChart = document.getElementById('ctx-view-chart');
+        this.lastCtxCoords = null;
+
         this.initEvents();
         this.viewer.start();
-        
+
+        this.chart = new TemperatureChart(this);
+
         // 启动 NetCDF 数据集异步加载与引擎初始化
         this.initDataEngine();
     }
@@ -37,6 +44,63 @@ class App {
             this.opacityVal.textContent = `${this.opacitySlider.value}%`;
             this.viewer.setTemperatureOpacity(opacity);
         });
+
+        window.addEventListener('globe-contextmenu', (e) => this.onGlobeContextMenu(e));
+        this.ctxViewChart.addEventListener('click', () => this.onContextMenuChart());
+        document.addEventListener('click', (e) => this.hideContextMenu(e));
+
+        // 交互优化：当拖拽/旋转地球时，隐藏右键菜单
+        if (this.viewer.controls) {
+            this.viewer.controls.addEventListener('start', () => this.hideContextMenu());
+        }
+
+        // 交互优化：当右键点击地球以外的空白区域（星空）时，隐藏右键菜单
+        this.viewer.renderer.domElement.addEventListener('contextmenu', (e) => {
+            const info = this.viewer.getLatLonFromClick(e);
+            if (!info) {
+                this.hideContextMenu();
+            }
+        });
+    }
+
+    onGlobeContextMenu(event) {
+        const detail = event.detail;
+        this.lastCtxCoords = {
+            lat: detail.lat,
+            lon: detail.lon,
+            latIdx: detail.latIdx,
+            lonIdx: detail.lonIdx
+        };
+
+        this.contextMenu.style.left = `${detail.clientX}px`;
+        this.contextMenu.style.top = `${detail.clientY}px`;
+
+        const rect = this.contextMenu.getBoundingClientRect();
+        if (rect.right > window.innerWidth) {
+            this.contextMenu.style.left = `${detail.clientX - rect.width - 5}px`;
+        }
+        if (rect.bottom > window.innerHeight) {
+            this.contextMenu.style.top = `${detail.clientY - rect.height - 5}px`;
+        }
+
+        this.contextMenu.style.display = 'block';
+    }
+
+    onContextMenuChart() {
+        this.hideContextMenu();
+        if (this.lastCtxCoords) {
+            this.chart.show(
+                this.lastCtxCoords.lat,
+                this.lastCtxCoords.lon,
+                this.lastCtxCoords.latIdx,
+                this.lastCtxCoords.lonIdx
+            );
+        }
+    }
+
+    hideContextMenu(event) {
+        if (event && this.contextMenu.contains(event.target)) return;
+        this.contextMenu.style.display = 'none';
     }
 
     async initDataEngine() {
@@ -109,7 +173,7 @@ class App {
                 const decYear = times[i];
                 const year = Math.floor(decYear);
                 const remainder = decYear - year;
-                let month = Math.round(remainder * 12) + 1;
+                let month = Math.floor(remainder * 12 + 1e-6) + 1;
                 if (month > 12) month = 12;
                 if (month < 1) month = 1;
 
