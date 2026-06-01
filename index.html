@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D 地球经纬度拾取器 — Premium Edition</title>
+    <title>全球温度历史演变 3D 可视化系统 — Premium Edition</title>
     <!-- 引入高科技和现代感字体 -->
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800&family=Outfit:wght@300;400;500;700&display=swap" rel="stylesheet">
     <!-- 引入自定义高科技样式 -->
@@ -11,36 +11,91 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
+    <!-- 引入纯前端 WebAssembly HDF5/NetCDF-4 读取库 h5wasm (本地离线版本) -->
+    <script src="js/h5wasm.js"></script>
 </head>
 <body>
 
-    <div id="info">
-        <h3>地球坐标拾取器</h3>
-        <div class="subtitle">3D Globe Coordinate Picker</div>
-        
-        <div id="result-box">
-            <div id="result-content" class="placeholder-text">
-                请在 3D 地球表面点击拾取坐标
-            </div>
-        </div>
+    <!-- 顶部玻璃态系统标题 -->
+    <div id="system-title">
+        <h1>GLOBAL TEMPERATURE ANOMALIES</h1>
+        <div class="subtitle-badge">Berkeley Earth Gridded NetCDF-4 Engine</div>
+    </div>
 
-        <div class="btn-group">
-            <button id="copy-btn" class="action-btn" disabled>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                复制坐标
-            </button>
-        </div>
-
-        <div class="history-section" id="history-section" style="display: none;">
-            <div class="history-title">最近拾取记录</div>
-            <ul class="history-list" id="history-list"></ul>
+    <!-- 炫酷的初始加载遮罩层 -->
+    <div id="loading-overlay">
+        <div class="loader-box">
+            <div class="loader-ring"></div>
+            <div class="loader-scan"></div>
+            <div class="loader-title">载入 Global_TAVG_Gridded_1deg.nc</div>
+            <div class="loader-subtitle">正在通过 WebAssembly 虚拟文件系统初始化核心数据集 (408MB)...</div>
+            <div class="loader-progress-bar"><div id="loader-progress" style="width: 0%;"></div></div>
+            <div id="loader-status">正在连接本地资源服务器...</div>
         </div>
     </div>
 
+    <!-- 全球温度控制中心面板 -->
+    <div id="info">
+        <h3>全球气温控制台</h3>
+        <div class="subtitle">3D Temporal Temperature Engine</div>
+        
+        <div class="control-group">
+            <div class="control-header">
+                <span class="control-label">历史年份</span>
+                <span id="year-val" class="control-value">---- 年</span>
+            </div>
+            <input type="range" id="year-slider" class="premium-slider" min="1850" max="2025" step="1" value="2000" disabled>
+            <div class="slider-ticks">
+                <span>1850</span>
+                <span>1900</span>
+                <span>1950</span>
+                <span>2000</span>
+                <span>2025</span>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <div class="control-header">
+                <span class="control-label">查询月份</span>
+                <span id="month-val" class="control-value">-- 月</span>
+            </div>
+            <input type="range" id="month-slider" class="premium-slider" min="1" max="12" step="1" value="6" disabled>
+            <div class="slider-ticks">
+                <span>1月</span>
+                <span>4月</span>
+                <span>7月</span>
+                <span>10月</span>
+                <span>12月</span>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <div class="control-header">
+                <span class="control-label">图层透明度</span>
+                <span id="opacity-val" class="control-value">80%</span>
+            </div>
+            <input type="range" id="opacity-slider" class="premium-slider" min="0" max="100" step="5" value="80">
+        </div>
+
+        <!-- 温度色阶卡 -->
+        <div class="colorbar-container">
+            <div class="colorbar-title">全球绝对温度分布比例色阶 (°C)</div>
+            <div class="colorbar-bar"></div>
+            <div class="colorbar-labels">
+                <span>-40°C</span>
+                <span>-20°C</span>
+                <span>0°C</span>
+                <span>20°C</span>
+                <span>40°C</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 底部状态显示提示 -->
     <div class="tips">
-        <span>左键拖拽旋转地球</span>
+        <span>左键拖拽旋转地球以观察全球温度流动</span>
         <span>鼠标滚轮缩放视图</span>
-        <span>单击表面拾取经纬度</span>
+        <span id="data-status">WASM 数据引擎就绪</span>
     </div>
 
     <!-- 引入主应用模块 -->

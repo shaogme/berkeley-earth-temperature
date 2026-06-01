@@ -20,7 +20,6 @@ export class GlobeViewer {
 
         this.clock = new THREE.Clock();
         this.radius = 5;
-        this.lastInteractTime = 0;
 
         this.initLights();
         this.initControls();
@@ -54,9 +53,7 @@ export class GlobeViewer {
         this.controls.dampingFactor = 0.05;
         this.controls.minDistance = 6.5;
         this.controls.maxDistance = 30;
-        this.controls.addEventListener('change', () => {
-            this.lastInteractTime = Date.now();
-        });
+
     }
 
     initStarField() {
@@ -111,15 +108,100 @@ export class GlobeViewer {
         const geometry = new THREE.SphereGeometry(this.radius, 64, 64);
         const textureLoader = new THREE.TextureLoader();
         const earthTexture = textureLoader.load('earth.jpg');
+        
+        // 创建一个空白的初始温度数据纹理，填充为无效
+        const initialData = new Uint8Array(360 * 180 * 4);
+        for(let i = 0; i < 360 * 180; i++) {
+            initialData[i * 4] = 128;     // R: 0度对应的归一化中间值
+            initialData[i * 4 + 1] = 0;   // G: 0表示无效(不渲染)
+            initialData[i * 4 + 2] = 0;   // B: 保留
+            initialData[i * 4 + 3] = 255; // A: 不透明
+        }
+        
+        this.tempTexture = new THREE.DataTexture(
+            initialData, 360, 180, THREE.RGBAFormat, THREE.UnsignedByteType
+        );
+        this.tempTexture.minFilter = THREE.LinearFilter;
+        this.tempTexture.magFilter = THREE.LinearFilter;
+        this.tempTexture.needsUpdate = true;
 
-        const material = new THREE.MeshStandardMaterial({
-            map: earthTexture,
-            roughness: 0.6,
-            metalness: 0.1
+        // 自定义高级着色器材质 (ShaderMaterial)
+        this.earthMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                uEarthTex: { value: earthTexture },
+                uTempTex: { value: this.tempTexture },
+                uOpacity: { value: 0.8 }, // 默认不透明度为 0.8
+                uLightDirection: { value: new THREE.Vector3(0, 0, 1) } // 从摄影机位置打光 (在视图空间中，相机永远朝向 -z，朝向相机的方向即为 (0,0,1))
+            },
+            vertexShader: `
+                varying vec3 vNormal;
+                varying vec2 vUv;
+                varying vec3 vViewPosition;
+                void main() {
+                    vNormal = normalize(normalMatrix * normal);
+                    vUv = uv;
+                    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                    vViewPosition = -mvPosition.xyz;
+                    gl_Position = projectionMatrix * mvPosition;
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D uEarthTex;
+                uniform sampler2D uTempTex;
+                uniform float uOpacity;
+                uniform vec3 uLightDirection;
+                
+                varying vec3 vNormal;
+                varying vec2 vUv;
+                varying vec3 vViewPosition;
+
+                // 精美的温度-色彩渐变映射函数
+                vec3 getTempColor(float t) {
+                    vec3 c1 = vec3(0.035, 0.518, 0.890); // -40C (#0984e3)
+                    vec3 c2 = vec3(0.0, 0.808, 0.788);   // -20C (#00cec9)
+                    vec3 c3 = vec3(1.0, 0.918, 0.655);   // 0C (#ffeaa7)
+                    vec3 c4 = vec3(1.0, 0.463, 0.459);   // 20C (#ff7675)
+                    vec3 c5 = vec3(0.839, 0.188, 0.192); // 40C (#d63031)
+
+                    if (t < 0.25) {
+                        return mix(c1, c2, t * 4.0);
+                    } else if (t < 0.5) {
+                        return mix(c2, c3, (t - 0.25) * 4.0);
+                    } else if (t < 0.75) {
+                        return mix(c3, c4, (t - 0.5) * 4.0);
+                    } else {
+                        return mix(c4, c5, (t - 0.75) * 4.0);
+                    }
+                }
+
+                void main() {
+                    vec4 earthColor = texture2D(uEarthTex, vUv);
+                    vec4 tempSample = texture2D(uTempTex, vUv);
+                    
+                    float tempNormalized = tempSample.r;
+                    float isValid = tempSample.g; // 1.0(255)为有效，0.0(0)为无效
+
+                    // 基础光照计算 (Lambert)，采用从摄影机打光的视角，并使用较柔和的过渡防止侧面发暗
+                    vec3 normal = normalize(vNormal);
+                    float diffuse = max(dot(normal, uLightDirection), 0.0) * 0.6 + 0.4; // 0.4 为较高的环境底光，0.6 为光照系数，保持立体感的同时解决侧面发暗问题
+
+                    vec3 finalRgb = earthColor.rgb;
+
+                    if (isValid > 0.5) {
+                        vec3 tempColor = getTempColor(tempNormalized);
+                        // 进行混合：在陆地温度覆盖区域，按透明度混合绝对气温色与基础地形贴图
+                        finalRgb = mix(earthColor.rgb, tempColor, uOpacity);
+                    }
+
+                    // 施加光照阴影，保持 3D 立体感
+                    gl_FragColor = vec4(finalRgb * diffuse, 1.0);
+                }
+            `
         });
 
-        this.earth = new THREE.Mesh(geometry, material);
+        this.earth = new THREE.Mesh(geometry, this.earthMaterial);
         this.scene.add(this.earth);
+        this.earthMaterial.needsUpdate = true;
     }
 
     initAtmosphereGlow() {
@@ -151,27 +233,9 @@ export class GlobeViewer {
         this.scene.add(glowMesh);
     }
 
+    // 废弃旧的 Marker 机制
     initMarker() {
-        this.markerGroup = new THREE.Group();
-
-        const markerSphere = new THREE.Mesh(
-            new THREE.SphereGeometry(0.12, 16, 16),
-            new THREE.MeshBasicMaterial({ color: 0x00f0ff })
-        );
-        this.markerGroup.add(markerSphere);
-
-        const ringGeo = new THREE.RingGeometry(0.14, 0.20, 32);
-        this.ringMat = new THREE.MeshBasicMaterial({
-            color: 0x00f0ff,
-            side: THREE.DoubleSide,
-            transparent: true,
-            opacity: 0.9
-        });
-        this.markerRing = new THREE.Mesh(ringGeo, this.ringMat);
-        this.markerGroup.add(this.markerRing);
-
-        this.earth.add(this.markerGroup);
-        this.markerGroup.visible = false;
+        // 无需做任何动作，保持函数存在防报错
     }
 
     initResize() {
@@ -183,11 +247,44 @@ export class GlobeViewer {
         });
     }
 
-    updateMarkerAnimation(elapsedTime) {
-        if (this.markerGroup.visible) {
-            const scaleVal = 1 + (elapsedTime * 2.5) % 1.5;
-            this.markerRing.scale.set(scaleVal, scaleVal, 1);
-            this.ringMat.opacity = Math.max(0, 1 - (scaleVal - 1) / 1.5);
+    // 新增：动态更新温度数据纹理的方法
+    // arrayData 格式为 Float32Array 包含 180 * 360 个绝对温度值
+    updateTemperatureTexture(arrayData) {
+        if (!this.tempTexture) return;
+
+        const data = this.tempTexture.image.data;
+        
+        // NetCDF 的纬度一般是从 -89.5 到 89.5 (180个，南到北)
+        // 经度一般是从 -179.5 到 179.5 (360个，西到东)
+        // Three.js 的球体贴图 UV 坐标：
+        // U 对应 经度 [0, 1] => [-180, 180]
+        // V 对应 纬度 [0, 1] => [-90, 90]
+        for (let i = 0; i < 360 * 180; i++) {
+            const val = arrayData[i];
+            
+            if (isNaN(val) || val === null) {
+                // 无效数据（例如缺测，或者海洋点如果没有被陆地掩码所排除）
+                data[i * 4] = 0;
+                data[i * 4 + 1] = 0; // G = 0 代表无效
+            } else {
+                // 绝对温度范围限制在 [-40, 40] 之间进行归一化
+                const clamped = Math.max(-40, Math.min(40, val));
+                const normalized = (clamped + 40) / 80; // 映射到 [0, 1]
+                
+                data[i * 4] = Math.round(normalized * 255); // R: 温度值
+                data[i * 4 + 1] = 255;                      // G: 255 代表有效
+            }
+            data[i * 4 + 2] = 0;   // B
+            data[i * 4 + 3] = 255; // A
+        }
+
+        this.tempTexture.needsUpdate = true;
+    }
+
+    // 设置温度图层不透明度
+    setTemperatureOpacity(opacity) {
+        if (this.earthMaterial && this.earthMaterial.uniforms.uOpacity) {
+            this.earthMaterial.uniforms.uOpacity.value = opacity;
         }
     }
 
@@ -196,14 +293,10 @@ export class GlobeViewer {
 
         const elapsedTime = this.clock.getElapsedTime();
 
-        if (Date.now() - this.lastInteractTime > 2000) {
-            this.earth.rotation.y += 0.0015;
-        }
 
         this.starField.rotation.y = elapsedTime * 0.002;
         this.starField.rotation.x = elapsedTime * 0.001;
 
-        this.updateMarkerAnimation(elapsedTime);
         if (this.boundariesManager) {
             this.boundariesManager.updateLabels();
         }
