@@ -1,0 +1,9 @@
+[package]
+name = "local_server"
+version = "1.0.0"
+edition = "2021"
+authors = ["Antigravity"]
+description = "A zero-dependency, ultra-fast compiling static file web server for the Proportional Symbol Bubble Map."
+
+[dependencies]
+# 完全零外部依赖，极速编译
