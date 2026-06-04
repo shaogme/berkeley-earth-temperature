@@ -1,7 +1,9 @@
+import { BaseViewer } from './base-viewer.js';
 import { GlobeBoundaries } from './globe-boundaries.js';
 
-export class GlobeViewer {
+export class GlobeViewer extends BaseViewer {
     constructor() {
+        super();
         this.scene = new THREE.Scene();
         this.camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.camera.position.set(0, 0, 15);
@@ -40,6 +42,7 @@ export class GlobeViewer {
         this.currentTempData = null;
         this.initTooltip();
         this.initContextMenu();
+        this.isActive = true;
     }
 
     initLights() {
@@ -297,8 +300,25 @@ export class GlobeViewer {
         }
     }
 
+    show() {
+        super.show();
+        this.renderer.domElement.style.display = 'block';
+        this.labelRenderer.domElement.style.display = 'block';
+        if (this.controls) this.controls.enabled = true;
+    }
+
+    hide() {
+        super.hide();
+        this.renderer.domElement.style.display = 'none';
+        this.labelRenderer.domElement.style.display = 'none';
+        if (this.tooltipEl) this.tooltipEl.style.display = 'none';
+        if (this.controls) this.controls.enabled = false;
+    }
+
     animate() {
         requestAnimationFrame(() => this.animate());
+
+        if (!this.isActive) return;
 
         const elapsedTime = this.clock.getElapsedTime();
 
@@ -333,6 +353,7 @@ export class GlobeViewer {
 
     // 鼠标移动时执行射线检测与温度值查询
     onMouseMove(event) {
+        if (!this.isActive) return;
         const overlay = document.getElementById('chart-overlay');
         if (overlay && overlay.style.display !== 'none') {
             this.tooltipEl.style.display = 'none';

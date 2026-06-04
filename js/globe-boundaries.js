@@ -1,3 +1,5 @@
+import { loadBoundariesGeoJSON } from './geojson-loader.js';
+
 export class GlobeBoundaries {
     constructor(viewer) {
         this.viewer = viewer;
@@ -12,14 +14,7 @@ export class GlobeBoundaries {
     }
 
     initBoundaries() {
-        // 使用本地的高精度国家边界数据
-        const geojsonUrl = './countries-land-1m.geo.json';
-        
-        fetch(geojsonUrl)
-            .then(response => {
-                if (!response.ok) throw new Error('Network response was not ok');
-                return response.json();
-            })
+        loadBoundariesGeoJSON()
             .then(geojson => {
                 const vertices = [];
                 // 将半径设为几乎贴合地球表面，彻底消除视差带来的偏移

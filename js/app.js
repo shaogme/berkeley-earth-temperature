@@ -1,9 +1,12 @@
 import { GlobeViewer } from './globe-viewer.js';
+import { FlatViewer } from './flat-viewer.js';
 import { TemperatureChart } from './temperature-chart.js';
 
 class App {
     constructor() {
-        this.viewer = new GlobeViewer();
+        this.globeViewer = new GlobeViewer();
+        this.flatViewer = new FlatViewer();
+        this.viewer = this.globeViewer; // 默认使用 3D Globe
         this.ncFile = null;
         this.timeList = []; // 存储 { year, month, idx, decYear }
         this.climatology = null; // 缓存气候态基准温度
@@ -27,8 +30,12 @@ class App {
         this.ctxViewChart = document.getElementById('ctx-view-chart');
         this.lastCtxCoords = null;
 
+        this.btn3D = document.getElementById('btn-3d');
+        this.btn2D = document.getElementById('btn-2d');
+
         this.initEvents();
-        this.viewer.start();
+        this.globeViewer.start();
+        this.flatViewer.start();
 
         this.chart = new TemperatureChart(this);
 
@@ -42,24 +49,34 @@ class App {
         this.opacitySlider.addEventListener('input', () => {
             const opacity = parseFloat(this.opacitySlider.value) / 100;
             this.opacityVal.textContent = `${this.opacitySlider.value}%`;
-            this.viewer.setTemperatureOpacity(opacity);
+            this.globeViewer.setTemperatureOpacity(opacity);
+            this.flatViewer.setTemperatureOpacity(opacity);
         });
+
+        // 绑定 2D/3D 切换按钮事件
+        this.btn3D.addEventListener('click', () => this.switchMode('3d'));
+        this.btn2D.addEventListener('click', () => this.switchMode('2d'));
 
         window.addEventListener('globe-contextmenu', (e) => this.onGlobeContextMenu(e));
         this.ctxViewChart.addEventListener('click', () => this.onContextMenuChart());
         document.addEventListener('click', (e) => this.hideContextMenu(e));
 
-        // 交互优化：当拖拽/旋转地球时，隐藏右键菜单
-        if (this.viewer.controls) {
-            this.viewer.controls.addEventListener('start', () => this.hideContextMenu());
+        // 交互优化：当拖拽/旋转视口时，隐藏右键菜单
+        if (this.globeViewer.controls) {
+            this.globeViewer.controls.addEventListener('start', () => this.hideContextMenu());
+        }
+        if (this.flatViewer.controls) {
+            this.flatViewer.controls.addEventListener('start', () => this.hideContextMenu());
         }
 
-        // 交互优化：当右键点击地球以外的空白区域（星空）时，隐藏右键菜单
-        this.viewer.renderer.domElement.addEventListener('contextmenu', (e) => {
-            const info = this.viewer.getLatLonFromClick(e);
-            if (!info) {
-                this.hideContextMenu();
-            }
+        // 交互优化：当右键点击视口以外的空白区域时，隐藏右键菜单
+        this.globeViewer.renderer.domElement.addEventListener('contextmenu', (e) => {
+            const info = this.globeViewer.getLatLonFromClick(e);
+            if (!info) this.hideContextMenu();
+        });
+        this.flatViewer.renderer.domElement.addEventListener('contextmenu', (e) => {
+            const info = this.flatViewer.getLatLonFromClick(e);
+            if (!info) this.hideContextMenu();
         });
     }
 
@@ -280,9 +297,80 @@ class App {
             }
         }
 
-        // 调用 viewer 更新数据纹理
-        this.viewer.updateTemperatureTexture(absoluteTemp);
+        // 调用 active viewer 更新数据纹理，同时对后台 viewer 更新以保持数据同步
+        this.globeViewer.updateTemperatureTexture(absoluteTemp);
+        this.flatViewer.updateTemperatureTexture(absoluteTemp);
         this.dataStatus.textContent = `渲染时间: ${this.timeList[tIdx].decYear.toFixed(4)} (数据索引: ${tIdx})`;
+    }
+
+    switchMode(mode) {
+        const duration = 500; // 动画持续时间 500ms
+        
+        if (mode === '3d') {
+            this.btn3D.classList.add('active');
+            this.btn2D.classList.remove('active');
+            
+            // 先淡出 2D
+            this.flatViewer.renderer.domElement.style.transition = `opacity ${duration}ms ease`;
+            this.flatViewer.labelRenderer.domElement.style.transition = `opacity ${duration}ms ease`;
+            this.flatViewer.renderer.domElement.style.opacity = '0';
+            this.flatViewer.labelRenderer.domElement.style.opacity = '0';
+            
+            setTimeout(() => {
+                this.flatViewer.hide();
+                
+                // 淡入 3D
+                this.globeViewer.show();
+                this.globeViewer.renderer.domElement.style.opacity = '0';
+                this.globeViewer.labelRenderer.domElement.style.opacity = '0';
+                this.globeViewer.renderer.domElement.style.transition = `opacity ${duration}ms ease`;
+                this.globeViewer.labelRenderer.domElement.style.transition = `opacity ${duration}ms ease`;
+                
+                // 强制重绘
+                this.globeViewer.renderer.domElement.offsetHeight;
+                
+                this.globeViewer.renderer.domElement.style.opacity = '1';
+                this.globeViewer.labelRenderer.domElement.style.opacity = '1';
+                this.viewer = this.globeViewer;
+            }, duration);
+            
+        } else {
+            this.btn2D.classList.add('active');
+            this.btn3D.classList.remove('active');
+            
+            // 先淡出 3D
+            this.globeViewer.renderer.domElement.style.transition = `opacity ${duration}ms ease`;
+            this.globeViewer.labelRenderer.domElement.style.transition = `opacity ${duration}ms ease`;
+            this.globeViewer.renderer.domElement.style.opacity = '0';
+            this.globeViewer.labelRenderer.domElement.style.opacity = '0';
+            
+            setTimeout(() => {
+                this.globeViewer.hide();
+                
+                // 淡入 2D
+                this.flatViewer.show();
+                this.flatViewer.renderer.domElement.style.opacity = '0';
+                this.flatViewer.labelRenderer.domElement.style.opacity = '0';
+                this.flatViewer.renderer.domElement.style.transition = `opacity ${duration}ms ease`;
+                this.flatViewer.labelRenderer.domElement.style.transition = `opacity ${duration}ms ease`;
+                
+                // 强制重绘
+                this.flatViewer.renderer.domElement.offsetHeight;
+                
+                this.flatViewer.renderer.domElement.style.opacity = '1';
+                this.flatViewer.labelRenderer.domElement.style.opacity = '1';
+                this.viewer = this.flatViewer;
+            }, duration);
+        }
+        
+        // 强制隐藏旧状态的右键菜单
+        this.hideContextMenu();
+        
+        // 重新同步透明度
+        const opacity = parseFloat(this.opacitySlider.value) / 100;
+        setTimeout(() => {
+            this.viewer.setTemperatureOpacity(opacity);
+        }, duration + 50);
     }
 }
 

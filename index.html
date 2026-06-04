@@ -18,12 +18,6 @@
 </head>
 <body>
 
-    <!-- 顶部玻璃态系统标题 -->
-    <div id="system-title">
-        <h1>GLOBAL TEMPERATURE ANOMALIES</h1>
-        <div class="subtitle-badge">Berkeley Earth Gridded NetCDF-4 Engine</div>
-    </div>
-
     <!-- 炫酷的初始加载遮罩层 -->
     <div id="loading-overlay">
         <div class="loader-box">
@@ -36,59 +30,75 @@
         </div>
     </div>
 
-    <!-- 全球温度控制中心面板 -->
+    <!-- 统一侧边控制中心面板 -->
     <div id="info">
-        <h3>全球气温控制台</h3>
-        <div class="subtitle">3D Temporal Temperature Engine</div>
-        
-        <div class="control-group">
-            <div class="control-header">
-                <span class="control-label">历史年份</span>
-                <span id="year-val" class="control-value">---- 年</span>
-            </div>
-            <input type="range" id="year-slider" class="premium-slider" min="1850" max="2025" step="1" value="2000" disabled>
-            <div class="slider-ticks">
-                <span>1850</span>
-                <span>1900</span>
-                <span>1950</span>
-                <span>2000</span>
-                <span>2025</span>
+        <!-- 子面板 1: 系统标题 -->
+        <div class="panel-section header-section">
+            <h1>GLOBAL TEMP</h1>
+            <div class="subtitle-badge">NetCDF gridded engine</div>
+            
+            <div class="projection-toggle">
+                <button id="btn-3d" class="toggle-btn active">3D Globe</button>
+                <button id="btn-2d" class="toggle-btn">2D Map</button>
             </div>
         </div>
 
-        <div class="control-group">
-            <div class="control-header">
-                <span class="control-label">查询月份</span>
-                <span id="month-val" class="control-value">-- 月</span>
+        <!-- 子面板 2: 控制器 -->
+        <div class="panel-section">
+            <h3>全球气温控制台</h3>
+            <div class="subtitle">3D & 2D Temperature Engine</div>
+            
+            <div class="control-group">
+                <div class="control-header">
+                    <span class="control-label">历史年份</span>
+                    <span id="year-val" class="control-value">---- 年</span>
+                </div>
+                <input type="range" id="year-slider" class="premium-slider" min="1850" max="2025" step="1" value="2000" disabled>
+                <div class="slider-ticks">
+                    <span>1850</span>
+                    <span>1900</span>
+                    <span>1950</span>
+                    <span>2000</span>
+                    <span>2025</span>
+                </div>
             </div>
-            <input type="range" id="month-slider" class="premium-slider" min="1" max="12" step="1" value="6" disabled>
-            <div class="slider-ticks">
-                <span>1月</span>
-                <span>4月</span>
-                <span>7月</span>
-                <span>10月</span>
-                <span>12月</span>
+
+            <div class="control-group">
+                <div class="control-header">
+                    <span class="control-label">查询月份</span>
+                    <span id="month-val" class="control-value">-- 月</span>
+                </div>
+                <input type="range" id="month-slider" class="premium-slider" min="1" max="12" step="1" value="6" disabled>
+                <div class="slider-ticks">
+                    <span>1月</span>
+                    <span>4月</span>
+                    <span>7月</span>
+                    <span>10月</span>
+                    <span>12月</span>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <div class="control-header">
+                    <span class="control-label">图层透明度</span>
+                    <span id="opacity-val" class="control-value">80%</span>
+                </div>
+                <input type="range" id="opacity-slider" class="premium-slider" min="0" max="100" step="5" value="80">
             </div>
         </div>
 
-        <div class="control-group">
-            <div class="control-header">
-                <span class="control-label">图层透明度</span>
-                <span id="opacity-val" class="control-value">80%</span>
-            </div>
-            <input type="range" id="opacity-slider" class="premium-slider" min="0" max="100" step="5" value="80">
-        </div>
-
-        <!-- 温度色阶卡 -->
-        <div class="colorbar-container">
-            <div class="colorbar-title">全球绝对温度分布比例色阶 (°C)</div>
-            <div class="colorbar-bar"></div>
-            <div class="colorbar-labels">
-                <span>-40°C</span>
-                <span>-20°C</span>
-                <span>0°C</span>
-                <span>20°C</span>
-                <span>40°C</span>
+        <!-- 子面板 3: 温度色阶卡 -->
+        <div class="panel-section colorbar-section">
+            <div class="colorbar-container">
+                <div class="colorbar-title">全球绝对温度分布比例色阶 (°C)</div>
+                <div class="colorbar-bar"></div>
+                <div class="colorbar-labels">
+                    <span>-40°C</span>
+                    <span>-20°C</span>
+                    <span>0°C</span>
+                    <span>20°C</span>
+                    <span>40°C</span>
+                </div>
             </div>
         </div>
     </div>
