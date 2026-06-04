@@ -61,19 +61,7 @@ export class TimelineViewer {
                     return `${p.name} 年<br/>全球年均温度: <span style="color:#00f0ff;font-weight:bold;">${p.value.toFixed(2)} °C</span>`;
                 }
             },
-            brush: {
-                toolbox: [], // 隐藏默认工具栏按钮以保持 UI 简洁，直接在图表上拖拽进行刷选
-                brushType: 'lineX',
-                xAxisIndex: 0,
-                brushStyle: {
-                    borderWidth: 1,
-                    color: 'rgba(0, 240, 255, 0.15)',
-                    borderColor: 'rgba(0, 240, 255, 0.5)'
-                },
-                outOfBrush: {
-                    colorAlpha: 0.3
-                }
-            },
+
             xAxis: {
                 type: 'category',
                 data: this.years.map(String),
@@ -142,39 +130,56 @@ export class TimelineViewer {
 
         this.chartInstance.setOption(option);
 
-        // 注册交互事件 1: 点击网格背景/折线以联动跳转
-        this.chartInstance.getZr().on('click', (params) => {
-            // 如果是在刷选状态，则不触发常规点击
-            if (this.isBrushing) return;
+        // 注册拖拽洗涤（Scrubbing）与点击事件
+        this.isDragging = false;
+        this.lastDraggedYear = null;
 
+        const zr = this.chartInstance.getZr();
+
+        // 辅助函数：根据鼠标事件获取对应的年份
+        const getYearFromEvent = (params) => {
             const pointInPixel = [params.offsetX, params.offsetY];
             if (this.chartInstance.containPixel('grid', pointInPixel)) {
                 const xIndex = this.chartInstance.convertFromPixel({ gridIndex: 0 }, pointInPixel)[0];
-                const year = this.years[xIndex];
+                return this.years[xIndex];
+            }
+            return null;
+        };
+
+        // 触发年份切换更新
+        const updateYearToApp = (year) => {
+            if (year && year !== this.lastDraggedYear) {
+                this.lastDraggedYear = year;
+                this.app.yearSlider.value = year;
+                this.app.onTimeChanged();
+            }
+        };
+
+        zr.on('mousedown', (params) => {
+            const year = getYearFromEvent(params);
+            if (year) {
+                this.isDragging = true;
+                updateYearToApp(year);
+            }
+        });
+
+        zr.on('mousemove', (params) => {
+            if (this.isDragging) {
+                const year = getYearFromEvent(params);
                 if (year) {
-                    this.app.yearSlider.value = year;
-                    this.app.onTimeChanged();
+                    updateYearToApp(year);
                 }
             }
         });
 
-        // 注册交互事件 2: 拖拽刷选 (Brush) 联动跳转
-        this.chartInstance.on('brushEnd', (params) => {
-            const areas = params.areas;
-            if (areas && areas.length > 0) {
-                const range = areas[0].coordRange;
-                if (range && range.length === 2) {
-                    const startIdx = Math.round(range[0]);
-                    const endIdx = Math.round(range[1]);
-                    // 跳转至选中区间的末年份
-                    const targetYear = this.years[endIdx];
-                    if (targetYear) {
-                        this.app.yearSlider.value = targetYear;
-                        this.app.onTimeChanged();
-                    }
-                }
-            }
-        });
+        const stopDragging = () => {
+            this.isDragging = false;
+            this.lastDraggedYear = null;
+        };
+
+        zr.on('mouseup', stopDragging);
+        // 当鼠标移出图表时，也停止拖拽
+        zr.on('globalout', stopDragging);
     }
 
     // 更新时间轴上当前激活的年份（双向联动）
