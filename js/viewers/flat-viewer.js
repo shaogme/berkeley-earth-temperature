@@ -1,7 +1,7 @@
 import { BaseViewer } from './base-viewer.js';
-import { loadBoundariesGeoJSON } from './geojson-loader.js';
-import { countryNameMap, customCentroids } from './country-config.js';
-import { FlatShader } from './shaders.js';
+import { loadBoundariesGeoJSON } from '../utils/geojson-loader.js';
+import { countryNameMap, customCentroids } from '../config/country-config.js';
+import { FlatShader } from '../shaders/shaders.js';
 
 export class FlatViewer extends BaseViewer {
     constructor() {

@@ -1,6 +1,6 @@
 import { BaseViewer } from './base-viewer.js';
-import { GlobeBoundaries } from './globe-boundaries.js';
-import { GlobeShader } from './shaders.js';
+import { GlobeBoundaries } from '../utils/globe-boundaries.js';
+import { GlobeShader } from '../shaders/shaders.js';
 
 export class GlobeViewer extends BaseViewer {
     constructor() {

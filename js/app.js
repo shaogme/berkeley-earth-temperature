@@ -1,7 +1,7 @@
-import { GlobeViewer } from './globe-viewer.js';
-import { FlatViewer } from './flat-viewer.js';
-import { TemperatureChart } from './temperature-chart.js';
-import { TimelineViewer } from './timeline-viewer.js';
+import { GlobeViewer } from './viewers/globe-viewer.js';
+import { FlatViewer } from './viewers/flat-viewer.js';
+import { TemperatureChart } from './viewers/temperature-chart.js';
+import { TimelineViewer } from './viewers/timeline-viewer.js';
 
 class App {
     constructor() {

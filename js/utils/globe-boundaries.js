@@ -1,5 +1,5 @@
 import { loadBoundariesGeoJSON } from './geojson-loader.js';
-import { countryNameMap, customCentroids } from './country-config.js';
+import { countryNameMap, customCentroids } from '../config/country-config.js';
 
 export class GlobeBoundaries {
     constructor(viewer) {
