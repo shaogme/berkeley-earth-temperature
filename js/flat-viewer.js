@@ -1,5 +1,7 @@
 import { BaseViewer } from './base-viewer.js';
 import { loadBoundariesGeoJSON } from './geojson-loader.js';
+import { countryNameMap, customCentroids } from './country-config.js';
+import { FlatShader } from './shaders.js';
 
 export class FlatViewer extends BaseViewer {
     constructor() {
@@ -92,20 +94,7 @@ export class FlatViewer extends BaseViewer {
         const textureLoader = new THREE.TextureLoader();
         const earthTexture = textureLoader.load('earth.jpg');
 
-        const initialData = new Uint8Array(360 * 180 * 4);
-        for(let i = 0; i < 360 * 180; i++) {
-            initialData[i * 4] = 128;
-            initialData[i * 4 + 1] = 0;
-            initialData[i * 4 + 2] = 0;
-            initialData[i * 4 + 3] = 255;
-        }
-        
-        this.tempTexture = new THREE.DataTexture(
-            initialData, 360, 180, THREE.RGBAFormat, THREE.UnsignedByteType
-        );
-        this.tempTexture.minFilter = THREE.LinearFilter;
-        this.tempTexture.magFilter = THREE.LinearFilter;
-        this.tempTexture.needsUpdate = true;
+        this.tempTexture = this.createTemperatureTexture();
 
         // 复用 3D 的温度-色彩着色器，简化光照计算
         this.earthMaterial = new THREE.ShaderMaterial({
@@ -116,77 +105,8 @@ export class FlatViewer extends BaseViewer {
                 uLightDirection: { value: new THREE.Vector3(0, 0, 1) },
                 uLayerMode: { value: 0 } // 0: 绝对温度, 1: 温度距平
             },
-            vertexShader: `
-                varying vec2 vUv;
-                void main() {
-                    vUv = uv;
-                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                }
-            `,
-            fragmentShader: `
-                uniform sampler2D uEarthTex;
-                uniform sampler2D uTempTex;
-                uniform float uOpacity;
-                uniform int uLayerMode;
-                
-                varying vec2 vUv;
-
-                // 精美的温度-色彩渐变映射函数，支持双色盘映射
-                vec3 getTempColor(float t, int mode) {
-                    if (mode == 0) {
-                        // 绝对温度色盘 (-40C 至 40C)
-                        vec3 c1 = vec3(0.035, 0.518, 0.890); // -40C
-                        vec3 c2 = vec3(0.0, 0.808, 0.788);   // -20C
-                        vec3 c3 = vec3(1.0, 0.918, 0.655);   // 0C
-                        vec3 c4 = vec3(1.0, 0.463, 0.459);   // 20C
-                        vec3 c5 = vec3(0.839, 0.188, 0.192); // 40C
-
-                        if (t < 0.25) {
-                            return mix(c1, c2, t * 4.0);
-                        } else if (t < 0.5) {
-                            return mix(c2, c3, (t - 0.25) * 4.0);
-                        } else if (t < 0.75) {
-                            return mix(c3, c4, (t - 0.5) * 4.0);
-                        } else {
-                            return mix(c4, c5, (t - 0.75) * 4.0);
-                        }
-                    } else {
-                        // 温度距平经典发散色盘 RdBu (-8C 至 8C)
-                        vec3 c1 = vec3(0.0196, 0.1882, 0.3804); // -8C (深蓝 #053061)
-                        vec3 c2 = vec3(0.1294, 0.4000, 0.6745); // -4C (浅蓝 #2166ac)
-                        vec3 c3 = vec3(0.9686, 0.9686, 0.9412); // 0C (暖白/淡黄 #f7f7f0)
-                        vec3 c4 = vec3(0.6980, 0.0941, 0.1686); // +4C (浅红 #b2182b)
-                        vec3 c5 = vec3(0.4039, 0.0, 0.1216);   // +8C (深红 #67001f)
-
-                        if (t < 0.25) {
-                            return mix(c1, c2, t * 4.0);
-                        } else if (t < 0.5) {
-                            return mix(c2, c3, (t - 0.25) * 4.0);
-                        } else if (t < 0.75) {
-                            return mix(c3, c4, (t - 0.5) * 4.0);
-                        } else {
-                            return mix(c4, c5, (t - 0.75) * 4.0);
-                        }
-                    }
-                }
-
-                void main() {
-                    vec4 earthColor = texture2D(uEarthTex, vUv);
-                    vec4 tempSample = texture2D(uTempTex, vUv);
-                    
-                    float tempNormalized = tempSample.r;
-                    float isValid = tempSample.g;
-
-                    vec3 finalRgb = earthColor.rgb;
-
-                    if (isValid > 0.5) {
-                        vec3 tempColor = getTempColor(tempNormalized, uLayerMode);
-                        finalRgb = mix(earthColor.rgb, tempColor, uOpacity);
-                    }
-
-                    gl_FragColor = vec4(finalRgb, 1.0);
-                }
-            `
+            vertexShader: FlatShader.vertexShader,
+            fragmentShader: FlatShader.fragmentShader
         });
 
         this.earth = new THREE.Mesh(geometry, this.earthMaterial);
@@ -217,73 +137,9 @@ export class FlatViewer extends BaseViewer {
                     const props = feature.properties || {};
                     const a3 = props.A3 || props.a3 || "";
                     
-                    const countryNameMap = {
-                        'CHN': '中国', 'USA': '美国', 'RUS': '俄罗斯', 'BRA': '巴西',
-                        'AUS': '澳大利亚', 'IND': '印度', 'CAN': '加拿大', 'ZAF': '南非',
-                        'FRA': '法国', 'DEU': '德国', 'GBR': '英国', 'JPN': '日本',
-                        'KOR': '韩国', 'ITA': '意大利', 'ESP': '西班牙', 'ARG': '阿根廷',
-                        'MEX': '墨西哥', 'EGY': '埃及', 'SAU': '沙特阿拉伯', 'IDN': '印尼',
-                        'TUR': '土耳其', 'KAZ': '哈萨克斯坦', 'MNG': '蒙古', 'GRL': '格陵兰',
-                        'CHL': '智利', 'SWE': '瑞典', 'NOR': '挪威', 'FIN': '芬兰',
-                        'IRN': '伊朗', 'PAK': '巴基斯坦', 'NGA': '尼日利亚', 'DZA': '阿尔及利亚',
-                        'SDN': '苏丹', 'KEN': '肯尼亚', 'THA': '泰国', 'VNM': '越南',
-                        'PHL': '菲律宾', 'NZL': '新西兰', 'PER': '秘鲁', 'COL': '哥伦比亚',
-                        'VEN': '委内瑞拉', 'BOL': '玻利维亚', 'LBY': '利比亚', 'MDG': '马达加斯加',
-                        'UKR': '乌克兰', 'POL': '波兰'
-                    };
-
                     const displayName = countryNameMap[a3];
                     if (displayName) {
-                        const customCentroids = {
-                            'CHN': { lat: 35.8617, lng: 104.1954 },
-                            'USA': { lat: 37.0902, lng: -95.7129 },
-                            'RUS': { lat: 61.5240, lng: 105.3188 },
-                            'BRA': { lat: -14.2350, lng: -51.9253 },
-                            'AUS': { lat: -25.2744, lng: 133.7751 },
-                            'IND': { lat: 21.0000, lng: 78.9629 },
-                            'CAN': { lat: 56.1304, lng: -106.3468 },
-                            'ZAF': { lat: -30.5595, lng: 22.9375 },
-                            'FRA': { lat: 46.2276, lng: 2.2137 },
-                            'DEU': { lat: 51.1657, lng: 10.4515 },
-                            'GBR': { lat: 54.3781, lng: -2.4360 },
-                            'JPN': { lat: 36.2048, lng: 138.2529 },
-                            'KOR': { lat: 35.9078, lng: 127.7669 },
-                            'ITA': { lat: 41.8719, lng: 12.5674 },
-                            'ESP': { lat: 40.4637, lng: -3.7492 },
-                            'ARG': { lat: -38.4161, lng: -63.6167 },
-                            'MEX': { lat: 23.6345, lng: -102.5528 },
-                            'EGY': { lat: 26.8206, lng: 30.8025 },
-                            'SAU': { lat: 23.8859, lng: 45.0792 },
-                            'IDN': { lat: -0.7893, lng: 113.9213 },
-                            'TUR': { lat: 38.9637, lng: 35.2433 },
-                            'KAZ': { lat: 48.0196, lng: 66.9237 },
-                            'MNG': { lat: 46.8625, lng: 103.8467 },
-                            'GRL': { lat: 72.0000, lng: -40.0000 },
-                            'CHL': { lat: -35.6751, lng: -71.5430 },
-                            'SWE': { lat: 60.1282, lng: 18.6435 },
-                            'NOR': { lat: 60.4720, lng: 8.4689 },
-                            'FIN': { lat: 61.9241, lng: 25.7482 },
-                            'IRN': { lat: 32.4279, lng: 53.6880 },
-                            'PAK': { lat: 30.3753, lng: 69.3451 },
-                            'NGA': { lat: 9.0820, lng: 8.6753 },
-                            'DZA': { lat: 28.0339, lng: 1.6596 },
-                            'SDN': { lat: 12.8628, lng: 30.2176 },
-                            'KEN': { lat: -0.0236, lng: 37.9062 },
-                            'THA': { lat: 15.8700, lng: 100.9925 },
-                            'VNM': { lat: 14.0583, lng: 108.2772 },
-                            'PHL': { lat: 12.8797, lng: 121.7740 },
-                            'NZL': { lat: -40.9006, lng: 174.8860 },
-                            'PER': { lat: -9.1900, lng: -75.0152 },
-                            'COL': { lat: 4.5709, lng: -74.2973 },
-                            'VEN': { lat: 6.4238, lng: -66.5897 },
-                            'BOL': { lat: -16.2902, lng: -63.5887 },
-                            'LBY': { lat: 26.3351, lng: 17.2283 },
-                            'MDG': { lat: -18.7669, lng: 46.8691 },
-                            'UKR': { lat: 48.3794, lng: 31.1656 },
-                            'POL': { lat: 51.9194, lng: 19.1451 }
-                        };
-
-                        let centroid = customCentroids[a3];
+                        const centroid = customCentroids[a3];
                         if (centroid) {
                             this.createCountryLabel(displayName, centroid.lat, centroid.lng);
                         }

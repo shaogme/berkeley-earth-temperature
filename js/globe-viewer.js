@@ -1,5 +1,6 @@
 import { BaseViewer } from './base-viewer.js';
 import { GlobeBoundaries } from './globe-boundaries.js';
+import { GlobeShader } from './shaders.js';
 
 export class GlobeViewer extends BaseViewer {
     constructor() {
@@ -11,7 +12,6 @@ export class GlobeViewer extends BaseViewer {
         this.renderer.domElement.style.display = 'block';
         this.labelRenderer.domElement.style.display = 'block';
 
-        this.clock = new THREE.Clock();
         this.radius = 5;
 
         this.initLights();
@@ -106,116 +106,19 @@ export class GlobeViewer extends BaseViewer {
         const textureLoader = new THREE.TextureLoader();
         const earthTexture = textureLoader.load('earth.jpg');
         
-        // 创建一个空白的初始温度数据纹理，填充为无效
-        const initialData = new Uint8Array(360 * 180 * 4);
-        for(let i = 0; i < 360 * 180; i++) {
-            initialData[i * 4] = 128;     // R: 0度对应的归一化中间值
-            initialData[i * 4 + 1] = 0;   // G: 0表示无效(不渲染)
-            initialData[i * 4 + 2] = 0;   // B: 保留
-            initialData[i * 4 + 3] = 255; // A: 不透明
-        }
-        
-        this.tempTexture = new THREE.DataTexture(
-            initialData, 360, 180, THREE.RGBAFormat, THREE.UnsignedByteType
-        );
-        this.tempTexture.minFilter = THREE.LinearFilter;
-        this.tempTexture.magFilter = THREE.LinearFilter;
-        this.tempTexture.needsUpdate = true;
+        this.tempTexture = this.createTemperatureTexture();
 
         // 自定义高级着色器材质 (ShaderMaterial)
         this.earthMaterial = new THREE.ShaderMaterial({
             uniforms: {
                 uEarthTex: { value: earthTexture },
                 uTempTex: { value: this.tempTexture },
-                uOpacity: { value: 0.8 }, // 默认不透明度为 0.8
-                uLightDirection: { value: new THREE.Vector3(0, 0, 1) }, // 从摄影机位置打光 (在视图空间中，相机永远朝向 -z，朝向相机的方向即为 (0,0,1))
-                uLayerMode: { value: 0 } // 0: 绝对温度, 1: 温度距平
+                uOpacity: { value: 0.8 },
+                uLightDirection: { value: new THREE.Vector3(0, 0, 1) },
+                uLayerMode: { value: 0 }
             },
-            vertexShader: `
-                varying vec3 vNormal;
-                varying vec2 vUv;
-                varying vec3 vViewPosition;
-                void main() {
-                    vNormal = normalize(normalMatrix * normal);
-                    vUv = uv;
-                    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-                    vViewPosition = -mvPosition.xyz;
-                    gl_Position = projectionMatrix * mvPosition;
-                }
-            `,
-            fragmentShader: `
-                uniform sampler2D uEarthTex;
-                uniform sampler2D uTempTex;
-                uniform float uOpacity;
-                uniform vec3 uLightDirection;
-                uniform int uLayerMode;
-                
-                varying vec3 vNormal;
-                varying vec2 vUv;
-                varying vec3 vViewPosition;
-
-                // 精美的温度-色彩渐变映射函数，支持双色盘映射
-                vec3 getTempColor(float t, int mode) {
-                    if (mode == 0) {
-                        // 绝对温度色盘 (-40C 至 40C)
-                        vec3 c1 = vec3(0.035, 0.518, 0.890); // -40C (#0984e3)
-                        vec3 c2 = vec3(0.0, 0.808, 0.788);   // -20C (#00cec9)
-                        vec3 c3 = vec3(1.0, 0.918, 0.655);   // 0C (#ffeaa7)
-                        vec3 c4 = vec3(1.0, 0.463, 0.459);   // 20C (#ff7675)
-                        vec3 c5 = vec3(0.839, 0.188, 0.192); // 40C (#d63031)
-
-                        if (t < 0.25) {
-                            return mix(c1, c2, t * 4.0);
-                        } else if (t < 0.5) {
-                            return mix(c2, c3, (t - 0.25) * 4.0);
-                        } else if (t < 0.75) {
-                            return mix(c3, c4, (t - 0.5) * 4.0);
-                        } else {
-                            return mix(c4, c5, (t - 0.75) * 4.0);
-                        }
-                    } else {
-                        // 温度距平经典发散色盘 RdBu (-8C 至 8C)
-                        vec3 c1 = vec3(0.0196, 0.1882, 0.3804); // -8C (深蓝 #053061)
-                        vec3 c2 = vec3(0.1294, 0.4000, 0.6745); // -4C (浅蓝 #2166ac)
-                        vec3 c3 = vec3(0.9686, 0.9686, 0.9412); // 0C (暖白/淡黄 #f7f7f0)
-                        vec3 c4 = vec3(0.6980, 0.0941, 0.1686); // +4C (浅红 #b2182b)
-                        vec3 c5 = vec3(0.4039, 0.0, 0.1216);   // +8C (深红 #67001f)
-
-                        if (t < 0.25) {
-                            return mix(c1, c2, t * 4.0);
-                        } else if (t < 0.5) {
-                            return mix(c2, c3, (t - 0.25) * 4.0);
-                        } else if (t < 0.75) {
-                            return mix(c3, c4, (t - 0.5) * 4.0);
-                        } else {
-                            return mix(c4, c5, (t - 0.75) * 4.0);
-                        }
-                    }
-                }
-
-                void main() {
-                    vec4 earthColor = texture2D(uEarthTex, vUv);
-                    vec4 tempSample = texture2D(uTempTex, vUv);
-                    
-                    float tempNormalized = tempSample.r;
-                    float isValid = tempSample.g; // 1.0(255)为有效，0.0(0)为无效
-
-                    // 基础光照计算 (Lambert)，采用从摄影机打光的视角，并使用较柔和的过渡防止侧面发暗
-                    vec3 normal = normalize(vNormal);
-                    float diffuse = max(dot(normal, uLightDirection), 0.0) * 0.6 + 0.4; // 0.4 为较高的环境底光，0.6 为光照系数，保持立体感的同时解决侧面发暗问题
-
-                    vec3 finalRgb = earthColor.rgb;
-
-                    if (isValid > 0.5) {
-                        vec3 tempColor = getTempColor(tempNormalized, uLayerMode);
-                        // 进行混合：在陆地温度覆盖区域，按透明度混合绝对气温色与基础地形贴图
-                        finalRgb = mix(earthColor.rgb, tempColor, uOpacity);
-                    }
-
-                    // 施加光照阴影，保持 3D 立体感
-                    gl_FragColor = vec4(finalRgb * diffuse, 1.0);
-                }
-            `
+            vertexShader: GlobeShader.vertexShader,
+            fragmentShader: GlobeShader.fragmentShader
         });
 
         this.earth = new THREE.Mesh(geometry, this.earthMaterial);

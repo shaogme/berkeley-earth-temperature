@@ -202,6 +202,24 @@ export class BaseViewer {
         this.tooltipEl.style.display = 'none';
     }
 
+    createTemperatureTexture() {
+        const initialData = new Uint8Array(360 * 180 * 4);
+        for (let i = 0; i < 360 * 180; i++) {
+            initialData[i * 4] = 128;     // R: 0度对应的归一化中间值
+            initialData[i * 4 + 1] = 0;   // G: 0表示无效(不渲染)
+            initialData[i * 4 + 2] = 0;   // B: 保留
+            initialData[i * 4 + 3] = 255; // A: 不透明
+        }
+        
+        const tempTexture = new THREE.DataTexture(
+            initialData, 360, 180, THREE.RGBAFormat, THREE.UnsignedByteType
+        );
+        tempTexture.minFilter = THREE.LinearFilter;
+        tempTexture.magFilter = THREE.LinearFilter;
+        tempTexture.needsUpdate = true;
+        return tempTexture;
+    }
+
     initContextMenu() {
         this.renderer.domElement.addEventListener('contextmenu', (e) => {
             if (!this.isActive) return;
@@ -219,6 +237,8 @@ export class BaseViewer {
                     }
                 });
                 window.dispatchEvent(customEvent);
+            } else {
+                window.dispatchEvent(new CustomEvent('globe-contextmenu-hide'));
             }
         });
     }

@@ -85,15 +85,7 @@ class App {
             this.flatViewer.controls.addEventListener('start', () => this.hideContextMenu());
         }
 
-        // 交互优化：当右键点击视口以外的空白区域时，隐藏右键菜单
-        this.globeViewer.renderer.domElement.addEventListener('contextmenu', (e) => {
-            const info = this.globeViewer.getLatLonFromClick(e);
-            if (!info) this.hideContextMenu();
-        });
-        this.flatViewer.renderer.domElement.addEventListener('contextmenu', (e) => {
-            const info = this.flatViewer.getLatLonFromClick(e);
-            if (!info) this.hideContextMenu();
-        });
+        window.addEventListener('globe-contextmenu-hide', () => this.hideContextMenu());
     }
 
     onGlobeContextMenu(event) {
