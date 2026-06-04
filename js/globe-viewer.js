@@ -4,22 +4,12 @@ import { GlobeBoundaries } from './globe-boundaries.js';
 export class GlobeViewer extends BaseViewer {
     constructor() {
         super();
-        this.scene = new THREE.Scene();
         this.camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.camera.position.set(0, 0, 15);
 
-        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        document.body.appendChild(this.renderer.domElement);
-
-        this.labelRenderer = new THREE.CSS2DRenderer();
-        this.labelRenderer.setSize(window.innerWidth, window.innerHeight);
-        this.labelRenderer.domElement.style.position = 'absolute';
-        this.labelRenderer.domElement.style.top = '0px';
-        this.labelRenderer.domElement.style.pointerEvents = 'none';
-        this.labelRenderer.domElement.style.zIndex = '1';
-        document.body.appendChild(this.labelRenderer.domElement);
+        // 由于 GlobeViewer 默认处于激活状态，将其 DOM 元素显示出来
+        this.renderer.domElement.style.display = 'block';
+        this.labelRenderer.domElement.style.display = 'block';
 
         this.clock = new THREE.Clock();
         this.radius = 5;
@@ -36,10 +26,7 @@ export class GlobeViewer extends BaseViewer {
         this.initMarker();
         this.initResize();
 
-        // 初始化射线检测与悬浮 Tooltip 相关的属性
-        this.raycaster = new THREE.Raycaster();
-        this.mouse = new THREE.Vector2();
-        this.currentTempData = null;
+        // 使用基类的 Tooltip 与 ContextMenu 逻辑
         this.initTooltip();
         this.initContextMenu();
         this.isActive = true;
@@ -64,7 +51,6 @@ export class GlobeViewer extends BaseViewer {
         this.controls.dampingFactor = 0.05;
         this.controls.minDistance = 6.5;
         this.controls.maxDistance = 30;
-
     }
 
     initStarField() {
@@ -249,79 +235,12 @@ export class GlobeViewer extends BaseViewer {
         // 无需做任何动作，保持函数存在防报错
     }
 
-    initResize() {
-        window.addEventListener('resize', () => {
-            this.camera.aspect = window.innerWidth / window.innerHeight;
-            this.camera.updateProjectionMatrix();
-            this.renderer.setSize(window.innerWidth, window.innerHeight);
-            this.labelRenderer.setSize(window.innerWidth, window.innerHeight);
-        });
-    }
-
-    // 新增：动态更新温度数据纹理的方法
-    // arrayData 格式为 Float32Array 包含 180 * 360 个绝对温度值
-    updateTemperatureTexture(arrayData) {
-        this.currentTempData = arrayData;
-        if (!this.tempTexture) return;
-
-        const data = this.tempTexture.image.data;
-        
-        // NetCDF 的纬度一般是从 -89.5 到 89.5 (180个，南到北)
-        // 经度一般是从 -179.5 到 179.5 (360个，西到东)
-        // Three.js 的球体贴图 UV 坐标：
-        // U 对应 经度 [0, 1] => [-180, 180]
-        // V 对应 纬度 [0, 1] => [-90, 90]
-        for (let i = 0; i < 360 * 180; i++) {
-            const val = arrayData[i];
-            
-            if (isNaN(val) || val === null) {
-                // 无效数据（例如缺测，或者海洋点如果没有被陆地掩码所排除）
-                data[i * 4] = 0;
-                data[i * 4 + 1] = 0; // G = 0 代表无效
-            } else {
-                // 绝对温度范围限制在 [-40, 40] 之间进行归一化
-                const clamped = Math.max(-40, Math.min(40, val));
-                const normalized = (clamped + 40) / 80; // 映射到 [0, 1]
-                
-                data[i * 4] = Math.round(normalized * 255); // R: 温度值
-                data[i * 4 + 1] = 255;                      // G: 255 代表有效
-            }
-            data[i * 4 + 2] = 0;   // B
-            data[i * 4 + 3] = 255; // A
-        }
-
-        this.tempTexture.needsUpdate = true;
-    }
-
-    // 设置温度图层不透明度
-    setTemperatureOpacity(opacity) {
-        if (this.earthMaterial && this.earthMaterial.uniforms.uOpacity) {
-            this.earthMaterial.uniforms.uOpacity.value = opacity;
-        }
-    }
-
-    show() {
-        super.show();
-        this.renderer.domElement.style.display = 'block';
-        this.labelRenderer.domElement.style.display = 'block';
-        if (this.controls) this.controls.enabled = true;
-    }
-
-    hide() {
-        super.hide();
-        this.renderer.domElement.style.display = 'none';
-        this.labelRenderer.domElement.style.display = 'none';
-        if (this.tooltipEl) this.tooltipEl.style.display = 'none';
-        if (this.controls) this.controls.enabled = false;
-    }
-
     animate() {
         requestAnimationFrame(() => this.animate());
 
         if (!this.isActive) return;
 
         const elapsedTime = this.clock.getElapsedTime();
-
 
         this.starField.rotation.y = elapsedTime * 0.002;
         this.starField.rotation.x = elapsedTime * 0.001;
@@ -336,135 +255,5 @@ export class GlobeViewer extends BaseViewer {
 
     start() {
         this.animate();
-    }
-
-    // 初始化悬浮气温 Tooltip 容器和事件绑定
-    initTooltip() {
-        this.tooltipEl = document.createElement('div');
-        this.tooltipEl.className = 'temp-tooltip';
-        this.tooltipEl.style.position = 'absolute';
-        this.tooltipEl.style.display = 'none';
-        this.tooltipEl.style.pointerEvents = 'none';
-        this.tooltipEl.style.zIndex = '1000';
-        document.body.appendChild(this.tooltipEl);
-
-        window.addEventListener('mousemove', (e) => this.onMouseMove(e));
-    }
-
-    // 鼠标移动时执行射线检测与温度值查询
-    onMouseMove(event) {
-        if (!this.isActive) return;
-        const overlay = document.getElementById('chart-overlay');
-        if (overlay && overlay.style.display !== 'none') {
-            this.tooltipEl.style.display = 'none';
-            return;
-        }
-        const ctxMenu = document.getElementById('context-menu');
-        if (ctxMenu && ctxMenu.style.display !== 'none') {
-            this.tooltipEl.style.display = 'none';
-            return;
-        }
-        if (!this.earth || !this.currentTempData) {
-            this.tooltipEl.style.display = 'none';
-            return;
-        }
-
-        // 1. 计算鼠标在 NDC 空间中的归一化坐标
-        this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-        this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-        // 2. 实时更新 Tooltip 的物理位置，并增加边界保护防止出界
-        let left = event.clientX + 15;
-        let top = event.clientY + 15;
-        const tooltipWidth = 160; 
-        const tooltipHeight = 70;
-        if (left + tooltipWidth > window.innerWidth) {
-            left = event.clientX - tooltipWidth - 15;
-        }
-        if (top + tooltipHeight > window.innerHeight) {
-            top = event.clientY - tooltipHeight - 15;
-        }
-        this.tooltipEl.style.left = `${left}px`;
-        this.tooltipEl.style.top = `${top}px`;
-
-        // 3. 执行射线相交检测
-        this.raycaster.setFromCamera(this.mouse, this.camera);
-        const intersects = this.raycaster.intersectObject(this.earth);
-
-        if (intersects.length > 0) {
-            const intersect = intersects[0];
-            if (intersect.uv) {
-                const u = intersect.uv.x;
-                const v = intersect.uv.y;
-
-                // 4. 将贴图 UV 映射到 180 * 360 网格坐标系中
-                // 360表示经度格点数，180表示纬度格点数
-                const lon_idx = Math.floor(u * 360) % 360;
-                const lat_idx = Math.floor(v * 180) % 180;
-                const idx = lat_idx * 360 + lon_idx;
-
-                const temp = this.currentTempData[idx];
-
-                // 5. 过滤并仅对陆地/有效气温点展示
-                if (temp !== undefined && temp !== null && !isNaN(temp)) {
-                    // 精确计算并在 UI 展示地理位置与气温
-                    const lat = (v * 180 - 90).toFixed(1);
-                    const lon = (u * 360 - 180).toFixed(1);
-                    const latStr = lat >= 0 ? `${lat}°N` : `${Math.abs(lat)}°S`;
-                    const lonStr = lon >= 0 ? `${lon}°E` : `${Math.abs(lon)}°W`;
-
-                    this.tooltipEl.innerHTML = `
-                        <div class="tooltip-coords">📍 ${latStr}, ${lonStr}</div>
-                        <div class="tooltip-temp">🌡️ ${temp.toFixed(1)} °C</div>
-                    `;
-                    this.tooltipEl.style.display = 'block';
-                    return;
-                }
-            }
-        }
-
-        // 未击中地球或击中无效网格点，隐藏 Tooltip
-        this.tooltipEl.style.display = 'none';
-    }
-
-    initContextMenu() {
-        this.renderer.domElement.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            const info = this.getLatLonFromClick(e);
-            if (info) {
-                const customEvent = new CustomEvent('globe-contextmenu', {
-                    detail: {
-                        lat: info.lat,
-                        lon: info.lon,
-                        latIdx: info.latIdx,
-                        lonIdx: info.lonIdx,
-                        clientX: e.clientX,
-                        clientY: e.clientY
-                    }
-                });
-                window.dispatchEvent(customEvent);
-            }
-        });
-    }
-
-    getLatLonFromClick(event) {
-        if (!this.earth) return null;
-
-        this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-        this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-        this.raycaster.setFromCamera(this.mouse, this.camera);
-        const intersects = this.raycaster.intersectObject(this.earth);
-
-        if (intersects.length > 0) {
-            const uv = intersects[0].uv;
-            if (!uv) return null;
-            const lonIdx = Math.floor(uv.x * 360) % 360;
-            const latIdx = Math.floor(uv.y * 180) % 180;
-            const lat = uv.y * 180 - 90;
-            const lon = uv.x * 360 - 180;
-            return { lat, lon, latIdx, lonIdx };
-        }
-        return null;
     }
 }
