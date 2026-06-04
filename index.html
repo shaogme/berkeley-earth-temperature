@@ -85,14 +85,19 @@
                 </div>
                 <input type="range" id="opacity-slider" class="premium-slider" min="0" max="100" step="5" value="80">
             </div>
+            
+            <div class="projection-toggle" style="margin-top: 8px;">
+                <button id="btn-absolute" class="toggle-btn active">绝对温度</button>
+                <button id="btn-anomaly" class="toggle-btn">温度距平</button>
+            </div>
         </div>
 
         <!-- 子面板 3: 温度色阶卡 -->
         <div class="panel-section colorbar-section">
             <div class="colorbar-container">
-                <div class="colorbar-title">全球绝对温度分布比例色阶 (°C)</div>
-                <div class="colorbar-bar"></div>
-                <div class="colorbar-labels">
+                <div id="colorbar-title" class="colorbar-title">全球绝对温度分布比例色阶 (°C)</div>
+                <div id="colorbar-bar" class="colorbar-bar"></div>
+                <div id="colorbar-labels" class="colorbar-labels">
                     <span>-40°C</span>
                     <span>-20°C</span>
                     <span>0°C</span>

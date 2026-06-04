@@ -62,8 +62,9 @@ export class BaseViewer {
         });
     }
 
-    updateTemperatureTexture(arrayData) {
+    updateTemperatureTexture(arrayData, isAnomaly = false) {
         this.currentTempData = arrayData;
+        this.isAnomalyMode = isAnomaly;
         if (!this.tempTexture) return;
 
         const data = this.tempTexture.image.data;
@@ -73,9 +74,15 @@ export class BaseViewer {
                 data[i * 4] = 0;
                 data[i * 4 + 1] = 0; // G = 0 代表无效
             } else {
-                const clamped = Math.max(-40, Math.min(40, val));
-                const normalized = (clamped + 40) / 80;
-                data[i * 4] = Math.round(normalized * 255); // R: 温度值
+                if (isAnomaly) {
+                    const clamped = Math.max(-8, Math.min(8, val));
+                    const normalized = (clamped + 8) / 16;
+                    data[i * 4] = Math.round(normalized * 255); // R: 温度距平值
+                } else {
+                    const clamped = Math.max(-40, Math.min(40, val));
+                    const normalized = (clamped + 40) / 80;
+                    data[i * 4] = Math.round(normalized * 255); // R: 绝对温度值
+                }
                 data[i * 4 + 1] = 255;                      // G: 255 代表有效
             }
             data[i * 4 + 2] = 0;   // B
@@ -88,6 +95,13 @@ export class BaseViewer {
         this.opacity = opacity;
         if (this.earthMaterial && this.earthMaterial.uniforms && this.earthMaterial.uniforms.uOpacity) {
             this.earthMaterial.uniforms.uOpacity.value = opacity;
+        }
+    }
+
+    setLayerMode(mode) {
+        if (this.earthMaterial && this.earthMaterial.uniforms && this.earthMaterial.uniforms.uLayerMode) {
+            this.earthMaterial.uniforms.uLayerMode.value = mode;
+            this.earthMaterial.needsUpdate = true;
         }
     }
 
@@ -172,9 +186,12 @@ export class BaseViewer {
                     const latStr = lat >= 0 ? `${lat}°N` : `${Math.abs(lat)}°S`;
                     const lonStr = lon >= 0 ? `${lon}°E` : `${Math.abs(lon)}°W`;
 
+                    const tempSign = temp >= 0 ? '+' : '';
+                    const tempLabel = this.isAnomalyMode ? `距平: ${tempSign}${temp.toFixed(1)} °C` : `温度: ${temp.toFixed(1)} °C`;
+
                     this.tooltipEl.innerHTML = `
                         <div class="tooltip-coords">📍 ${latStr}, ${lonStr}</div>
-                        <div class="tooltip-temp">🌡️ ${temp.toFixed(1)} °C</div>
+                        <div class="tooltip-temp">🌡️ ${tempLabel}</div>
                     `;
                     this.tooltipEl.style.display = 'block';
                     return;

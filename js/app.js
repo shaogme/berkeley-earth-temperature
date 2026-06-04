@@ -27,6 +27,16 @@ class App {
         this.opacityVal = document.getElementById('opacity-val');
         this.dataStatus = document.getElementById('data-status');
 
+        this.btnAbsolute = document.getElementById('btn-absolute');
+        this.btnAnomaly = document.getElementById('btn-anomaly');
+        this.colorbarTitle = document.getElementById('colorbar-title');
+        this.colorbarBar = document.getElementById('colorbar-bar');
+        this.colorbarLabels = document.getElementById('colorbar-labels');
+        this.layerMode = 'absolute'; // 'absolute' 或 'anomaly'
+
+        this.currentAbsoluteTempArray = null;
+        this.currentAnomalyTempArray = null;
+
         this.contextMenu = document.getElementById('context-menu');
         this.ctxViewChart = document.getElementById('ctx-view-chart');
         this.lastCtxCoords = null;
@@ -58,6 +68,10 @@ class App {
         // 绑定 2D/3D 切换按钮事件
         this.btn3D.addEventListener('click', () => this.switchMode('3d'));
         this.btn2D.addEventListener('click', () => this.switchMode('2d'));
+
+        // 绑定图层模式切换按钮事件
+        this.btnAbsolute.addEventListener('click', () => this.switchLayerMode('absolute'));
+        this.btnAnomaly.addEventListener('click', () => this.switchLayerMode('anomaly'));
 
         window.addEventListener('globe-contextmenu', (e) => this.onGlobeContextMenu(e));
         this.ctxViewChart.addEventListener('click', () => this.onContextMenuChart());
@@ -379,11 +393,11 @@ class App {
 
         // 使用 slice 获取当前月的距平值，省去加载全部时间轴的内存开销
         // shape [time, lat, lon] = [times_len, 180, 360]
-        // slice(start, end)
         const tempSlice = this.tempDataset.slice([[tIdx, tIdx + 1], [0, 180], [0, 360]]);
 
         const numGrid = 180 * 360;
         const absoluteTemp = new Float32Array(numGrid);
+        const anomalyTemp = new Float32Array(numGrid);
 
         const climOffset = (month - 1) * numGrid;
 
@@ -394,6 +408,7 @@ class App {
             // 检查 NaN、极值填充值 (如 -9999 或 _FillValue) 并且仅渲染陆地格点
             if (!isLand || isNaN(anomaly) || anomaly === null || anomaly < -99 || anomaly > 99) {
                 absoluteTemp[i] = NaN;
+                anomalyTemp[i] = NaN;
             } else {
                 // 绝对温度 = 距平 (anomaly) + 常年该月气候态 (climatology)
                 const climVal = this.climatology[climOffset + i];
@@ -401,16 +416,75 @@ class App {
                 // 同样检查气候态基准温度是否为异常的填充值
                 if (isNaN(climVal) || climVal === null || climVal < -99 || climVal > 99) {
                     absoluteTemp[i] = NaN;
+                    anomalyTemp[i] = NaN;
                 } else {
                     absoluteTemp[i] = anomaly + climVal;
+                    anomalyTemp[i] = anomaly;
                 }
             }
         }
 
-        // 调用 active viewer 更新数据纹理，同时对后台 viewer 更新以保持数据同步
-        this.globeViewer.updateTemperatureTexture(absoluteTemp);
-        this.flatViewer.updateTemperatureTexture(absoluteTemp);
+        this.currentAbsoluteTempArray = absoluteTemp;
+        this.currentAnomalyTempArray = anomalyTemp;
+
+        this.updateViewerData();
+
         this.dataStatus.textContent = `渲染时间: ${this.timeList[tIdx].decYear.toFixed(4)} (数据索引: ${tIdx})`;
+    }
+
+    updateViewerData() {
+        const isAnomaly = (this.layerMode === 'anomaly');
+        const arrayData = isAnomaly ? this.currentAnomalyTempArray : this.currentAbsoluteTempArray;
+        
+        if (!arrayData) return;
+
+        const modeValue = isAnomaly ? 1 : 0;
+        this.globeViewer.setLayerMode(modeValue);
+        this.flatViewer.setLayerMode(modeValue);
+
+        this.globeViewer.updateTemperatureTexture(arrayData, isAnomaly);
+        this.flatViewer.updateTemperatureTexture(arrayData, isAnomaly);
+    }
+
+    switchLayerMode(mode) {
+        if (this.layerMode === mode) return;
+        this.layerMode = mode;
+
+        if (mode === 'absolute') {
+            this.btnAbsolute.classList.add('active');
+            this.btnAnomaly.classList.remove('active');
+            this.updateColorbar('absolute');
+        } else {
+            this.btnAnomaly.classList.add('active');
+            this.btnAbsolute.classList.remove('active');
+            this.updateColorbar('anomaly');
+        }
+
+        this.updateViewerData();
+    }
+
+    updateColorbar(mode) {
+        if (mode === 'absolute') {
+            this.colorbarTitle.textContent = '全球绝对温度分布比例色阶 (°C)';
+            this.colorbarBar.style.background = 'linear-gradient(to right, #0984e3 0%, #00cec9 25%, #ffeaa7 50%, #ff7675 75%, #d63031 100%)';
+            this.colorbarLabels.innerHTML = `
+                <span>-40°C</span>
+                <span>-20°C</span>
+                <span>0°C</span>
+                <span>20°C</span>
+                <span>40°C</span>
+            `;
+        } else {
+            this.colorbarTitle.textContent = '全球温度距平分布比例色阶 (°C)';
+            this.colorbarBar.style.background = 'linear-gradient(to right, #053061 0%, #2166ac 25%, #f7f7f0 50%, #b2182b 75%, #67001f 100%)';
+            this.colorbarLabels.innerHTML = `
+                <span>-8°C</span>
+                <span>-4°C</span>
+                <span>0°C</span>
+                <span>+4°C</span>
+                <span>+8°C</span>
+            `;
+        }
     }
 
     switchMode(mode) {
