@@ -129,11 +129,28 @@ export class BaseViewer {
         this.tooltipEl.style.zIndex = '1000';
         document.body.appendChild(this.tooltipEl);
 
+        this.isDragging = false;
+        if (this.controls) {
+            this.controls.addEventListener('start', () => {
+                this.isDragging = true;
+                if (this.tooltipEl) {
+                    this.tooltipEl.style.display = 'none';
+                }
+            });
+            this.controls.addEventListener('end', () => {
+                this.isDragging = false;
+            });
+        }
+
         window.addEventListener('mousemove', (e) => this.onMouseMove(e));
     }
 
     onMouseMove(event) {
         if (!this.isActive) return;
+        if (this.isDragging) {
+            this.tooltipEl.style.display = 'none';
+            return;
+        }
         const overlay = document.getElementById('chart-overlay');
         if (overlay && overlay.style.display !== 'none') {
             this.tooltipEl.style.display = 'none';
