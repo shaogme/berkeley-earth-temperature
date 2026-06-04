@@ -1,6 +1,7 @@
 import { GlobeViewer } from './globe-viewer.js';
 import { FlatViewer } from './flat-viewer.js';
 import { TemperatureChart } from './temperature-chart.js';
+import { TimelineViewer } from './timeline-viewer.js';
 
 class App {
     constructor() {
@@ -38,6 +39,7 @@ class App {
         this.flatViewer.start();
 
         this.chart = new TemperatureChart(this);
+        this.timelineViewer = new TimelineViewer(this);
 
         // 启动 NetCDF 数据集异步加载与引擎初始化
         this.initDataEngine();
@@ -215,6 +217,9 @@ class App {
             this.yearSlider.disabled = false;
             this.monthSlider.disabled = false;
 
+            // 预先计算全球历史气温变化曲线，以便初始化时间轴
+            this.computeGlobalAnnualTemperatures();
+
             // 隐藏加载遮罩层
             setTimeout(() => {
                 this.loadingOverlay.style.opacity = '0';
@@ -233,6 +238,109 @@ class App {
         }
     }
 
+    computeGlobalAnnualTemperatures() {
+        if (!this.tempDataset || !this.climatology || !this.timeList || this.timeList.length === 0) return;
+
+        console.time('GlobalTempCalculation');
+        this.loaderStatus.textContent = '正在利用 WebAssembly 加载引擎计算全球历史气温概览曲线...';
+
+        const numGrid = 180 * 360;
+        const landGridIndices = [];
+        const areaWeights = [];
+        let totalWeight = 0;
+
+        // 1. 预先提取陆地格点的索引和面积权重 (根据纬度余弦值面积加权)
+        for (let latIdx = 0; latIdx < 180; latIdx++) {
+            const lat = latIdx - 90 + 0.5;
+            const weight = Math.cos(lat * Math.PI / 180);
+            for (let lonIdx = 0; lonIdx < 360; lonIdx++) {
+                const idx = latIdx * 360 + lonIdx;
+                const isLand = this.landMask ? (this.landMask[idx] > 0.05) : true;
+                if (isLand) {
+                    landGridIndices.push(idx);
+                    areaWeights.push(weight);
+                    totalWeight += weight;
+                }
+            }
+        }
+
+        if (landGridIndices.length === 0) {
+            for (let i = 0; i < numGrid; i++) {
+                landGridIndices.push(i);
+                const latIdx = Math.floor(i / 360);
+                const lat = latIdx - 90 + 0.5;
+                const weight = Math.cos(lat * Math.PI / 180);
+                areaWeights.push(weight);
+                totalWeight += weight;
+            }
+        }
+
+        // 2. 计算 12 个月的常年气候态全球陆地平均温
+        const monthlyClimMeans = new Float32Array(12);
+        for (let m = 0; m < 12; m++) {
+            let sumClim = 0;
+            let sumW = 0;
+            const offset = m * numGrid;
+            for (let i = 0; i < landGridIndices.length; i++) {
+                const idx = landGridIndices[i];
+                const climVal = this.climatology[offset + idx];
+                if (!isNaN(climVal) && climVal > -99 && climVal < 99) {
+                    const w = areaWeights[i];
+                    sumClim += climVal * w;
+                    sumW += w;
+                }
+            }
+            monthlyClimMeans[m] = sumW > 0 ? sumClim / sumW : 0;
+        }
+
+        // 3. 一次性获取全部温度距平数据以获得最佳性能
+        const tempValues = this.tempDataset.value;
+        const numMonths = this.timeList.length;
+        const monthlyAnomalyMeans = new Float32Array(numMonths);
+
+        for (let t = 0; t < numMonths; t++) {
+            let sumAnom = 0;
+            let sumW = 0;
+            const offset = t * numGrid;
+            for (let i = 0; i < landGridIndices.length; i++) {
+                const idx = landGridIndices[i];
+                const anomaly = tempValues[offset + idx];
+                if (!isNaN(anomaly) && anomaly > -99 && anomaly < 99) {
+                    const w = areaWeights[i];
+                    sumAnom += anomaly * w;
+                    sumW += w;
+                }
+            }
+            monthlyAnomalyMeans[t] = sumW > 0 ? sumAnom / sumW : NaN;
+        }
+
+        // 4. 合成月度绝对气温并按年分组
+        const yearGroups = {};
+        for (let t = 0; t < numMonths; t++) {
+            const timeInfo = this.timeList[t];
+            const anomaly = monthlyAnomalyMeans[t];
+            if (isNaN(anomaly)) continue;
+
+            const clim = monthlyClimMeans[timeInfo.month - 1];
+            const absTemp = anomaly + clim;
+
+            if (!yearGroups[timeInfo.year]) {
+                yearGroups[timeInfo.year] = { sum: 0, count: 0 };
+            }
+            yearGroups[timeInfo.year].sum += absTemp;
+            yearGroups[timeInfo.year].count++;
+        }
+
+        // 5. 生成折线图所需的 X 轴和 Y 轴数据
+        const chartYears = Object.keys(yearGroups).map(Number).sort((a, b) => a - b);
+        const chartTemps = chartYears.map(y => yearGroups[y].count > 0 ? yearGroups[y].sum / yearGroups[y].count : null);
+
+        console.timeEnd('GlobalTempCalculation');
+
+        // 初始化时间轴视图
+        this.timelineViewer.init(chartYears, chartTemps);
+    }
+
     onTimeChanged() {
         if (!this.ncFile || this.timeList.length === 0) return;
 
@@ -243,24 +351,26 @@ class App {
         this.monthVal.textContent = `${targetMonth} 月`;
 
         // 在时间序列中寻找对应的索引
-        // 或者是取年份月份完全匹配的最接近的那个点
         let matched = this.timeList.find(t => t.year === targetYear && t.month === targetMonth);
         
         if (!matched) {
-            // 如果某年份这个月份恰好缺测，取该年份所有月份中最接近的
             const sameYearList = this.timeList.filter(t => t.year === targetYear);
             if (sameYearList.length > 0) {
                 matched = sameYearList.reduce((prev, curr) => 
                     Math.abs(curr.month - targetMonth) < Math.abs(prev.month - targetMonth) ? curr : prev
                 );
             } else {
-                // 如果整年缺失，取最接近的时间索引
                 matched = this.timeList[0];
             }
         }
 
         const tIdx = matched.idx;
         this.renderGlobalTemperature(tIdx, matched.month);
+
+        // 同步时间轴当前高亮指示的年份
+        if (this.timelineViewer) {
+            this.timelineViewer.updateActiveYear(targetYear);
+        }
     }
 
     // 渲染特定时间索引的全球温度
