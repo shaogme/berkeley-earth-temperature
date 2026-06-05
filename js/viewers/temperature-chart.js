@@ -11,6 +11,7 @@ export class TemperatureChart {
         this.isMultiMode = false;
         this.markedPoints = null;
 
+        // DOM 元素缓存
         this.overlay = document.getElementById('chart-overlay');
         this.coordsEl = document.getElementById('chart-coords');
         this.annualRange = document.getElementById('chart-range-annual');
@@ -23,6 +24,64 @@ export class TemperatureChart {
         this.closeBtn = document.getElementById('chart-close-btn');
 
         this.initEvents();
+    }
+
+    /**
+     * 格式化经纬度坐标为可读字符串
+     * @param {number} lat 纬度
+     * @param {number} lon 经度
+     * @returns {string} 格式化后的字符串
+     */
+    formatCoordinates(lat, lon) {
+        if (lat === null || lon === null || lat === undefined || lon === undefined) return '';
+        const latStr = lat >= 0 ? `${lat.toFixed(1)}°N` : `${(-lat).toFixed(1)}°S`;
+        const lonStr = lon >= 0 ? `${lon.toFixed(1)}°E` : `${(-lon).toFixed(1)}°W`;
+        return `${latStr}, ${lonStr}`;
+    }
+
+    /**
+     * 获取通用的 ECharts 配置对象
+     * @param {string} titleText 图表标题
+     * @param {boolean} hasLegend 是否包含图例
+     * @returns {object} ECharts 配置基准对象
+     */
+    getCommonChartOption(titleText, hasLegend = false) {
+        return {
+            title: {
+                text: titleText,
+                textStyle: { color: '#e2e8f0', fontSize: 15, fontFamily: 'Orbitron' },
+                left: 'center',
+                top: 0
+            },
+            tooltip: {
+                trigger: 'axis',
+                backgroundColor: 'rgba(10,15,30,0.85)',
+                borderColor: 'rgba(0,240,255,0.3)',
+                borderWidth: 1,
+                textStyle: { color: '#e2e8f0', fontSize: 12 }
+            },
+            grid: {
+                left: '8%',
+                right: '5%',
+                top: hasLegend ? '24%' : '16%',
+                bottom: '12%'
+            },
+            xAxis: {
+                type: 'category',
+                axisLabel: { color: '#94a3b8', fontSize: 11 },
+                axisLine: { lineStyle: { color: 'rgba(0,240,255,0.15)' } },
+                axisTick: { lineStyle: { color: 'rgba(0,240,255,0.15)' } },
+                splitLine: { show: false }
+            },
+            yAxis: {
+                type: 'value',
+                name: '温度 (°C)',
+                nameTextStyle: { color: '#94a3b8', fontSize: 11 },
+                axisLabel: { color: '#94a3b8', fontSize: 11 },
+                scale: true,
+                splitLine: { lineStyle: { color: 'rgba(255,255,255,0.04)', type: 'dashed' } }
+            }
+        };
     }
 
     initEvents() {
@@ -79,9 +138,8 @@ export class TemperatureChart {
         this.currentLatIdx = latIdx;
         this.currentLonIdx = lonIdx;
 
-        const latStr = lat >= 0 ? `${lat.toFixed(1)}°N` : `${(-lat).toFixed(1)}°S`;
-        const lonStr = lon >= 0 ? `${lon.toFixed(1)}°E` : `${(-lon).toFixed(1)}°W`;
-        this.coordsEl.textContent = `📍 ${latStr}, ${lonStr}`;
+        const coordsStr = this.formatCoordinates(lat, lon);
+        this.coordsEl.textContent = `📍 ${coordsStr}`;
 
         // 同步当前的单选框状态到内存 mode 中，并刷新面板控制
         const checkedRadio = document.querySelector('input[name="chart-mode"]:checked');
@@ -122,7 +180,7 @@ export class TemperatureChart {
     }
 
     renderPlaceholder() {
-        this.initChart();
+        if (!this.initChart()) return;
         this.chartInstance.setOption({
             title: {
                 text: '请选择时间范围与查看模式，点击“生成图表”按钮开始分析',
@@ -302,11 +360,10 @@ export class TemperatureChart {
                 return (group && group.count > 0) ? +(group.sum / group.count).toFixed(2) : null;
             });
 
-            const latStr = item.point.lat >= 0 ? `${item.point.lat.toFixed(1)}°N` : `${(-item.point.lat).toFixed(1)}°S`;
-            const lonStr = item.point.lon >= 0 ? `${item.point.lon.toFixed(1)}°E` : `${(-item.point.lon).toFixed(1)}°W`;
+            const coordsStr = this.formatCoordinates(item.point.lat, item.point.lon);
 
             seriesList.push({
-                name: `P${item.point.id} (${latStr}, ${lonStr})`,
+                name: `P${item.point.id} (${coordsStr})`,
                 type: 'line',
                 data: temps,
                 smooth: true,
@@ -316,14 +373,9 @@ export class TemperatureChart {
             });
         });
 
-        this.initChart();
-        this.chartInstance.setOption({
-            title: {
-                text: `多点年度平均温度对比趋势 (${startYear} - ${endYear})`,
-                textStyle: { color: '#e2e8f0', fontSize: 14, fontFamily: 'Orbitron' },
-                left: 'center',
-                top: 0
-            },
+        const baseOption = this.getCommonChartOption(`多点年度平均温度对比趋势 (${startYear} - ${endYear})`, true);
+        const option = {
+            ...baseOption,
             legend: {
                 data: seriesList.map(s => s.name),
                 textStyle: { color: '#94a3b8', fontSize: 10, fontFamily: 'Outfit' },
@@ -331,11 +383,7 @@ export class TemperatureChart {
                 left: 'center'
             },
             tooltip: {
-                trigger: 'axis',
-                backgroundColor: 'rgba(10,15,30,0.85)',
-                borderColor: 'rgba(0,240,255,0.3)',
-                borderWidth: 1,
-                textStyle: { color: '#e2e8f0', fontSize: 12 },
+                ...baseOption.tooltip,
                 formatter: (params) => {
                     let result = `${params[0].axisValue} 年<br/>`;
                     params.forEach(p => {
@@ -346,29 +394,20 @@ export class TemperatureChart {
                     return result;
                 }
             },
-            grid: { left: '8%', right: '5%', top: '24%', bottom: '10%' },
             xAxis: {
-                type: 'category',
+                ...baseOption.xAxis,
                 data: years.map(String),
                 axisLabel: {
-                    color: '#94a3b8',
-                    interval: Math.max(0, Math.floor(years.length / 12) - 1),
-                    fontSize: 11
-                },
-                axisLine: { lineStyle: { color: 'rgba(0,240,255,0.15)' } },
-                axisTick: { lineStyle: { color: 'rgba(0,240,255,0.15)' } },
-                splitLine: { show: false }
-            },
-            yAxis: {
-                type: 'value',
-                name: '温度 (°C)',
-                nameTextStyle: { color: '#94a3b8', fontSize: 11 },
-                axisLabel: { color: '#94a3b8', fontSize: 11 },
-                scale: true,
-                splitLine: { lineStyle: { color: 'rgba(255,255,255,0.04)', type: 'dashed' } }
+                    ...baseOption.xAxis.axisLabel,
+                    interval: Math.max(0, Math.floor(years.length / 12) - 1)
+                }
             },
             series: seriesList
-        });
+        };
+
+        if (this.initChart()) {
+            this.chartInstance.setOption(option);
+        }
     }
 
     renderMonthlyMulti() {
@@ -385,11 +424,10 @@ export class TemperatureChart {
                 temps.push(entry ? +entry.absoluteTemp.toFixed(2) : null);
             }
 
-            const latStr = item.point.lat >= 0 ? `${item.point.lat.toFixed(1)}°N` : `${(-item.point.lat).toFixed(1)}°S`;
-            const lonStr = item.point.lon >= 0 ? `${item.point.lon.toFixed(1)}°E` : `${(-item.point.lon).toFixed(1)}°W`;
+            const coordsStr = this.formatCoordinates(item.point.lat, item.point.lon);
 
             seriesList.push({
-                name: `P${item.point.id} (${latStr}, ${lonStr})`,
+                name: `P${item.point.id} (${coordsStr})`,
                 type: 'line',
                 data: temps,
                 smooth: true,
@@ -400,14 +438,9 @@ export class TemperatureChart {
             });
         });
 
-        this.initChart();
-        this.chartInstance.setOption({
-            title: {
-                text: `${targetYear} 年 多点逐月温度变化对比`,
-                textStyle: { color: '#e2e8f0', fontSize: 14, fontFamily: 'Orbitron' },
-                left: 'center',
-                top: 0
-            },
+        const baseOption = this.getCommonChartOption(`${targetYear} 年 多点逐月温度变化对比`, true);
+        const option = {
+            ...baseOption,
             legend: {
                 data: seriesList.map(s => s.name),
                 textStyle: { color: '#94a3b8', fontSize: 10, fontFamily: 'Outfit' },
@@ -415,11 +448,7 @@ export class TemperatureChart {
                 left: 'center'
             },
             tooltip: {
-                trigger: 'axis',
-                backgroundColor: 'rgba(10,15,30,0.85)',
-                borderColor: 'rgba(0,240,255,0.3)',
-                borderWidth: 1,
-                textStyle: { color: '#e2e8f0', fontSize: 12 },
+                ...baseOption.tooltip,
                 formatter: (params) => {
                     let result = `${params[0].axisValue}<br/>`;
                     params.forEach(p => {
@@ -430,29 +459,20 @@ export class TemperatureChart {
                     return result;
                 }
             },
-            grid: { left: '8%', right: '5%', top: '24%', bottom: '10%' },
             xAxis: {
-                type: 'category',
-                data: monthNames,
-                axisLabel: { color: '#94a3b8', fontSize: 11 },
-                axisLine: { lineStyle: { color: 'rgba(0,240,255,0.15)' } },
-                axisTick: { lineStyle: { color: 'rgba(0,240,255,0.15)' } },
-                splitLine: { show: false }
-            },
-            yAxis: {
-                type: 'value',
-                name: '温度 (°C)',
-                nameTextStyle: { color: '#94a3b8', fontSize: 11 },
-                axisLabel: { color: '#94a3b8', fontSize: 11 },
-                scale: true,
-                splitLine: { lineStyle: { color: 'rgba(255,255,255,0.04)', type: 'dashed' } }
+                ...baseOption.xAxis,
+                data: monthNames
             },
             series: seriesList
-        });
+        };
+
+        if (this.initChart()) {
+            this.chartInstance.setOption(option);
+        }
     }
 
     renderEmpty() {
-        this.initChart();
+        if (!this.initChart()) return;
         this.chartInstance.setOption({
             title: {
                 text: '该位置无有效温度数据（海洋或缺失区域）',
@@ -482,52 +502,35 @@ export class TemperatureChart {
         const years = Object.keys(yearMap).map(Number).sort((a, b) => a - b);
         const temps = years.map(y => yearMap[y].count > 0 ? yearMap[y].sum / yearMap[y].count : null);
 
-        const tMin = Math.min(...temps.filter(v => v !== null));
-        const tMax = Math.max(...temps.filter(v => v !== null));
+        const validTemps = temps.filter(v => v !== null);
+        const tMin = validTemps.length ? Math.min(...validTemps) : 0;
+        const tMax = validTemps.length ? Math.max(...validTemps) : 30;
         const padding = Math.max(5, (tMax - tMin) * 0.15);
 
-        this.initChart();
-        this.chartInstance.setOption({
-            title: {
-                text: `年度平均温度变化趋势 (${startYear} - ${endYear})`,
-                textStyle: { color: '#e2e8f0', fontSize: 15, fontFamily: 'Orbitron' },
-                left: 'center',
-                top: 0
-            },
+        const baseOption = this.getCommonChartOption(`年度平均温度变化趋势 (${startYear} - ${endYear})`, false);
+        const option = {
+            ...baseOption,
             tooltip: {
-                trigger: 'axis',
+                ...baseOption.tooltip,
                 formatter: (params) => {
                     const p = params[0];
                     const val = p.value;
                     if (val === null || val === undefined) return `${p.axisValue} 年<br/>无数据`;
                     return `${p.axisValue} 年<br/>平均温度: ${val.toFixed(2)} °C`;
-                },
-                backgroundColor: 'rgba(10,15,30,0.85)',
-                borderColor: 'rgba(0,240,255,0.3)',
-                borderWidth: 1,
-                textStyle: { color: '#e2e8f0', fontSize: 12 }
+                }
             },
-            grid: { left: '8%', right: '5%', top: '16%', bottom: '12%' },
             xAxis: {
-                type: 'category',
+                ...baseOption.xAxis,
                 data: years.map(String),
                 axisLabel: {
-                    color: '#94a3b8',
-                    interval: Math.max(0, Math.floor(years.length / 12) - 1),
-                    fontSize: 11
-                },
-                axisLine: { lineStyle: { color: 'rgba(0,240,255,0.15)' } },
-                axisTick: { lineStyle: { color: 'rgba(0,240,255,0.15)' } },
-                splitLine: { show: false }
+                    ...baseOption.xAxis.axisLabel,
+                    interval: Math.max(0, Math.floor(years.length / 12) - 1)
+                }
             },
             yAxis: {
-                type: 'value',
-                name: '温度 (°C)',
-                nameTextStyle: { color: '#94a3b8', fontSize: 11 },
-                axisLabel: { color: '#94a3b8', fontSize: 11 },
+                ...baseOption.yAxis,
                 min: Math.floor(tMin - padding),
-                max: Math.ceil(tMax + padding),
-                splitLine: { lineStyle: { color: 'rgba(255,255,255,0.04)', type: 'dashed' } }
+                max: Math.ceil(tMax + padding)
             },
             series: [{
                 type: 'line',
@@ -554,7 +557,11 @@ export class TemperatureChart {
                     }]
                 }
             }]
-        });
+        };
+
+        if (this.initChart()) {
+            this.chartInstance.setOption(option);
+        }
     }
 
     renderMonthly() {
@@ -573,43 +580,25 @@ export class TemperatureChart {
         const tMax = validTemps.length ? Math.max(...validTemps) : 40;
         const padding = Math.max(3, (tMax - tMin) * 0.15);
 
-        this.initChart();
-        this.chartInstance.setOption({
-            title: {
-                text: `${targetYear} 年 逐月温度变化`,
-                textStyle: { color: '#e2e8f0', fontSize: 15, fontFamily: 'Orbitron' },
-                left: 'center',
-                top: 0
-            },
+        const baseOption = this.getCommonChartOption(`${targetYear} 年 逐月温度变化`, false);
+        const option = {
+            ...baseOption,
             tooltip: {
-                trigger: 'axis',
+                ...baseOption.tooltip,
                 formatter: (params) => {
                     const p = params[0];
                     if (p.value === null || p.value === undefined) return `${p.axisValue}<br/>无数据`;
                     return `${p.axisValue}<br/>温度: ${p.value.toFixed(2)} °C`;
-                },
-                backgroundColor: 'rgba(10,15,30,0.85)',
-                borderColor: 'rgba(0,240,255,0.3)',
-                borderWidth: 1,
-                textStyle: { color: '#e2e8f0', fontSize: 12 }
+                }
             },
-            grid: { left: '8%', right: '5%', top: '14%', bottom: '10%' },
             xAxis: {
-                type: 'category',
-                data: monthNames,
-                axisLabel: { color: '#94a3b8', fontSize: 11 },
-                axisLine: { lineStyle: { color: 'rgba(0,240,255,0.15)' } },
-                axisTick: { lineStyle: { color: 'rgba(0,240,255,0.15)' } },
-                splitLine: { show: false }
+                ...baseOption.xAxis,
+                data: monthNames
             },
             yAxis: {
-                type: 'value',
-                name: '温度 (°C)',
-                nameTextStyle: { color: '#94a3b8', fontSize: 11 },
-                axisLabel: { color: '#94a3b8', fontSize: 11 },
+                ...baseOption.yAxis,
                 min: Math.floor(tMin - padding),
-                max: Math.ceil(tMax + padding),
-                splitLine: { lineStyle: { color: 'rgba(255,255,255,0.04)', type: 'dashed' } }
+                max: Math.ceil(tMax + padding)
             },
             series: [{
                 type: 'line',
@@ -629,15 +618,34 @@ export class TemperatureChart {
                     }
                 }
             }]
-        });
+        };
+
+        if (this.initChart()) {
+            this.chartInstance.setOption(option);
+        }
     }
 
+    /**
+     * 初始化图表实例，增加健壮性检查
+     * @returns {boolean} 初始化是否成功
+     */
     initChart() {
         if (this.chartInstance) {
             this.chartInstance.dispose();
+            this.chartInstance = null;
         }
-        this.chartInstance = echarts.init(this.chartContainer, 'dark', {
-            renderer: 'canvas'
-        });
+        if (typeof echarts === 'undefined') {
+            console.error('ECharts is not defined. Please ensure the ECharts library is loaded.');
+            return false;
+        }
+        try {
+            this.chartInstance = echarts.init(this.chartContainer, 'dark', {
+                renderer: 'canvas'
+            });
+            return true;
+        } catch (e) {
+            console.error('Failed to initialize ECharts:', e);
+            return false;
+        }
     }
 }
