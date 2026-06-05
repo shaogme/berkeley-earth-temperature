@@ -28,7 +28,7 @@ export class GlobeViewer extends BaseViewer {
 
         // 使用基类的 Tooltip 与 ContextMenu 逻辑
         this.initTooltip();
-        this.initContextMenu();
+        this.initMouseClickEvents();
         this.isActive = true;
     }
 
@@ -173,9 +173,54 @@ export class GlobeViewer extends BaseViewer {
         if (this.boundariesManager) {
             this.boundariesManager.updateLabels();
         }
+        this.updateMarkers();
         this.controls.update();
         this.renderer.render(this.scene, this.camera);
         this.labelRenderer.render(this.scene, this.camera);
+    }
+
+    latLngToVector3(lat, lng, radius) {
+        const phi = lat * (Math.PI / 180);
+        const theta = lng * (Math.PI / 180);
+
+        const x = radius * Math.cos(phi) * Math.cos(theta);
+        const y = radius * Math.sin(phi);
+        const z = -radius * Math.cos(phi) * Math.sin(theta);
+
+        return new THREE.Vector3(x, y, z);
+    }
+
+    addMarkerVisual(lat, lon, id) {
+        this.removeMarkerVisual(id);
+
+        const el = this.createMarkerElement(id);
+        const labelObj = new THREE.CSS2DObject(el);
+        const pos = this.latLngToVector3(lat, lon, this.radius * 1.01);
+        labelObj.position.copy(pos);
+
+        this.earth.add(labelObj);
+        this.markerObjects.set(id, labelObj);
+    }
+
+    updateMarkers() {
+        if (!this.markerObjects) return;
+        const tempV = new THREE.Vector3();
+        const cameraPosition = this.camera.position;
+
+        for (const markerObj of this.markerObjects.values()) {
+            markerObj.getWorldPosition(tempV);
+            const markerDir = tempV.clone().normalize();
+            const camDir = tempV.clone().sub(cameraPosition).normalize();
+            const dot = markerDir.dot(camDir);
+
+            if (dot > -0.1) {
+                markerObj.element.style.opacity = '0';
+                markerObj.element.style.display = 'none';
+            } else {
+                markerObj.element.style.opacity = '1';
+                markerObj.element.style.display = 'block';
+            }
+        }
     }
 
     start() {

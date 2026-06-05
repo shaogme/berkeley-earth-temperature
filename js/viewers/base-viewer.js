@@ -35,6 +35,7 @@ export class BaseViewer {
         this.earthMaterial = null;
         this.tooltipEl = null;
         this.controls = null;
+        this.markerObjects = new Map(); // 存储标记可视化对象 { id -> CSS2DObject }
     }
 
     init() {
@@ -237,27 +238,84 @@ export class BaseViewer {
         return tempTexture;
     }
 
-    initContextMenu() {
+    initMouseClickEvents() {
+        let clickStartX = 0;
+        let clickStartY = 0;
+        let clickStartTime = 0;
+
+        // 阻止右键默认上下文菜单
         this.renderer.domElement.addEventListener('contextmenu', (e) => {
-            if (!this.isActive) return;
             e.preventDefault();
-            const info = this.getLatLonFromClick(e);
-            if (info) {
-                const customEvent = new CustomEvent('globe-contextmenu', {
-                    detail: {
-                        lat: info.lat,
-                        lon: info.lon,
-                        latIdx: info.latIdx,
-                        lonIdx: info.lonIdx,
-                        clientX: e.clientX,
-                        clientY: e.clientY
+        });
+
+        this.renderer.domElement.addEventListener('pointerdown', (e) => {
+            if (!this.isActive) return;
+            clickStartX = e.clientX;
+            clickStartY = e.clientY;
+            clickStartTime = Date.now();
+        });
+
+        this.renderer.domElement.addEventListener('pointerup', (e) => {
+            if (!this.isActive) return;
+            const diffX = Math.abs(e.clientX - clickStartX);
+            const diffY = Math.abs(e.clientY - clickStartY);
+            const duration = Date.now() - clickStartTime;
+
+            // 拖动距离很小且时间较短，视为单击
+            if (diffX < 5 && diffY < 5 && duration < 300) {
+                const info = this.getLatLonFromClick(e);
+                if (info) {
+                    if (e.button === 0) { // 左键标点
+                        window.dispatchEvent(new CustomEvent('map-leftclick', { detail: info }));
+                    } else if (e.button === 2) { // 右键取消标点
+                        window.dispatchEvent(new CustomEvent('map-rightclick', { detail: info }));
                     }
-                });
-                window.dispatchEvent(customEvent);
-            } else {
-                window.dispatchEvent(new CustomEvent('globe-contextmenu-hide'));
+                }
             }
         });
+    }
+
+    createMarkerElement(id) {
+        const container = document.createElement('div');
+        container.className = 'map-marker';
+
+        const ring = document.createElement('div');
+        ring.className = 'marker-ring';
+        container.appendChild(ring);
+
+        const dot = document.createElement('div');
+        dot.className = 'marker-dot';
+        container.appendChild(dot);
+
+        const label = document.createElement('span');
+        label.className = 'marker-label';
+        label.textContent = `P${id}`;
+        container.appendChild(label);
+
+        return container;
+    }
+
+    addMarkerVisual(lat, lon, id) {
+        // 由子类实现具体的坐标转换和添加逻辑
+    }
+
+    removeMarkerVisual(id) {
+        const markerObj = this.markerObjects.get(id);
+        if (markerObj) {
+            if (markerObj.parent) {
+                markerObj.parent.remove(markerObj);
+            }
+            this.markerObjects.delete(id);
+        }
+    }
+
+    clearAllMarkersVisual() {
+        for (const [id, markerObj] of this.markerObjects.entries()) {
+            if (markerObj.parent) {
+                markerObj.parent.remove(markerObj);
+            }
+        }
+        this.markerObjects.clear();
     }
 
     getLatLonFromClick(event) {

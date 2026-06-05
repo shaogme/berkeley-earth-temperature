@@ -37,9 +37,10 @@ class App {
         this.currentAbsoluteTempArray = null;
         this.currentAnomalyTempArray = null;
 
-        this.contextMenu = document.getElementById('context-menu');
-        this.ctxViewChart = document.getElementById('ctx-view-chart');
-        this.lastCtxCoords = null;
+        this.markedPoints = []; // 存储标点数据
+        this.markerCountVal = document.getElementById('marker-count-val');
+        this.btnGenerateCurve = document.getElementById('btn-generate-curve');
+        this.btnClearMarkers = document.getElementById('btn-clear-markers');
 
         this.btn3D = document.getElementById('btn-3d');
         this.btn2D = document.getElementById('btn-2d');
@@ -73,59 +74,90 @@ class App {
         this.btnAbsolute.addEventListener('click', () => this.switchLayerMode('absolute'));
         this.btnAnomaly.addEventListener('click', () => this.switchLayerMode('anomaly'));
 
-        window.addEventListener('globe-contextmenu', (e) => this.onGlobeContextMenu(e));
-        this.ctxViewChart.addEventListener('click', () => this.onContextMenuChart());
-        document.addEventListener('click', (e) => this.hideContextMenu(e));
-
-        // 交互优化：当拖拽/旋转视口时，隐藏右键菜单
-        if (this.globeViewer.controls) {
-            this.globeViewer.controls.addEventListener('start', () => this.hideContextMenu());
-        }
-        if (this.flatViewer.controls) {
-            this.flatViewer.controls.addEventListener('start', () => this.hideContextMenu());
-        }
-
-        window.addEventListener('globe-contextmenu-hide', () => this.hideContextMenu());
+        window.addEventListener('map-leftclick', (e) => this.onMapLeftClick(e.detail));
+        window.addEventListener('map-rightclick', (e) => this.onMapRightClick(e.detail));
+        this.btnGenerateCurve.addEventListener('click', () => {
+            if (this.markedPoints.length > 0) {
+                this.chart.showMulti(this.markedPoints);
+            }
+        });
+        this.btnClearMarkers.addEventListener('click', () => this.clearAllMarkers());
     }
 
-    onGlobeContextMenu(event) {
-        const detail = event.detail;
-        this.lastCtxCoords = {
-            lat: detail.lat,
-            lon: detail.lon,
-            latIdx: detail.latIdx,
-            lonIdx: detail.lonIdx
+    onMapLeftClick(coords) {
+        const idx = coords.latIdx * 360 + coords.lonIdx;
+        const isLand = this.landMask ? (this.landMask[idx] > 0.05) : true;
+        
+        if (!isLand || !this.currentAbsoluteTempArray || isNaN(this.currentAbsoluteTempArray[idx])) {
+            console.log('Clicked on invalid temperature data (ocean/missing), ignoring marker.');
+            return;
+        }
+
+        const exists = this.markedPoints.some(p => p.latIdx === coords.latIdx && p.lonIdx === coords.lonIdx);
+        if (exists) {
+            console.log('Point already marked.');
+            return;
+        }
+
+        const id = this.markedPoints.length > 0 ? Math.max(...this.markedPoints.map(p => p.id)) + 1 : 1;
+        const newPoint = {
+            id: id,
+            lat: coords.lat,
+            lon: coords.lon,
+            latIdx: coords.latIdx,
+            lonIdx: coords.lonIdx
         };
 
-        this.contextMenu.style.left = `${detail.clientX}px`;
-        this.contextMenu.style.top = `${detail.clientY}px`;
-
-        const rect = this.contextMenu.getBoundingClientRect();
-        if (rect.right > window.innerWidth) {
-            this.contextMenu.style.left = `${detail.clientX - rect.width - 5}px`;
-        }
-        if (rect.bottom > window.innerHeight) {
-            this.contextMenu.style.top = `${detail.clientY - rect.height - 5}px`;
-        }
-
-        this.contextMenu.style.display = 'block';
+        this.markedPoints.push(newPoint);
+        this.viewer.addMarkerVisual(newPoint.lat, newPoint.lon, newPoint.id);
+        this.updateMarkerUI();
     }
 
-    onContextMenuChart() {
-        this.hideContextMenu();
-        if (this.lastCtxCoords) {
-            this.chart.show(
-                this.lastCtxCoords.lat,
-                this.lastCtxCoords.lon,
-                this.lastCtxCoords.latIdx,
-                this.lastCtxCoords.lonIdx
-            );
+    onMapRightClick(coords) {
+        if (this.markedPoints.length === 0) return;
+
+        let closestIdx = -1;
+        let minDiff = Infinity;
+
+        this.markedPoints.forEach((p, index) => {
+            let diffLon = Math.abs(p.lon - coords.lon);
+            if (diffLon > 180) diffLon = 360 - diffLon;
+            const diffLat = Math.abs(p.lat - coords.lat);
+            const totalDiff = diffLat + diffLon;
+
+            if (totalDiff < minDiff) {
+                minDiff = totalDiff;
+                closestIdx = index;
+            }
+        });
+
+        if (closestIdx !== -1 && minDiff < 3) {
+            const removed = this.markedPoints.splice(closestIdx, 1)[0];
+            this.viewer.removeMarkerVisual(removed.id);
+            this.updateMarkerUI();
         }
     }
 
-    hideContextMenu(event) {
-        if (event && this.contextMenu.contains(event.target)) return;
-        this.contextMenu.style.display = 'none';
+    clearAllMarkers() {
+        this.markedPoints = [];
+        this.globeViewer.clearAllMarkersVisual();
+        this.flatViewer.clearAllMarkersVisual();
+        this.updateMarkerUI();
+    }
+
+    updateMarkerUI() {
+        const count = this.markedPoints.length;
+        this.markerCountVal.textContent = `${count} 个`;
+
+        if (count > 0) {
+            this.btnGenerateCurve.disabled = false;
+            this.btnGenerateCurve.classList.add('active');
+            this.btnClearMarkers.disabled = false;
+        } else {
+            this.btnGenerateCurve.disabled = true;
+            this.btnGenerateCurve.classList.remove('active');
+            this.btnClearMarkers.disabled = true;
+        }
     }
 
     async initDataEngine() {
@@ -480,6 +512,7 @@ class App {
     }
 
     switchMode(mode) {
+        this.clearAllMarkers(); // 切换时清空标点
         const duration = 500; // 动画持续时间 500ms
         
         if (mode === '3d') {
@@ -539,8 +572,7 @@ class App {
             }, duration);
         }
         
-        // 强制隐藏旧状态的右键菜单
-        this.hideContextMenu();
+        // 标点已在新模式下清空
         
         // 重新同步透明度
         const opacity = parseFloat(this.opacitySlider.value) / 100;

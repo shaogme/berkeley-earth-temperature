@@ -32,7 +32,7 @@ export class FlatViewer extends BaseViewer {
         this.initResize();
 
         this.initTooltip();
-        this.initContextMenu();
+        this.initMouseClickEvents();
     }
 
     initLights() {
@@ -202,6 +202,19 @@ export class FlatViewer extends BaseViewer {
         this.controls.update();
         this.renderer.render(this.scene, this.camera);
         this.labelRenderer.render(this.scene, this.camera);
+    }
+
+    addMarkerVisual(lat, lon, id) {
+        this.removeMarkerVisual(id);
+
+        const el = this.createMarkerElement(id);
+        const labelObj = new THREE.CSS2DObject(el);
+        const pos = this.latLngToVector2D(lat, lon);
+        pos.z = 0.05; // 稍微抬高防止遮挡
+        labelObj.position.copy(pos);
+
+        this.scene.add(labelObj);
+        this.markerObjects.set(id, labelObj);
     }
 
     start() {

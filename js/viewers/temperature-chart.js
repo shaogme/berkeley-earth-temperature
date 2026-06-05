@@ -8,6 +8,8 @@ export class TemperatureChart {
         this.currentLatIdx = null;
         this.currentLonIdx = null;
         this.timeSeriesData = null;
+        this.isMultiMode = false;
+        this.markedPoints = null;
 
         this.overlay = document.getElementById('chart-overlay');
         this.coordsEl = document.getElementById('chart-coords');
@@ -66,6 +68,7 @@ export class TemperatureChart {
     }
 
     show(lat, lon, latIdx, lonIdx) {
+        this.isMultiMode = false;
         // 如果位置发生变化，才清除缓存的该点时间序列数据
         if (this.currentLatIdx !== latIdx || this.currentLonIdx !== lonIdx) {
             this.timeSeriesData = null;
@@ -94,6 +97,27 @@ export class TemperatureChart {
         }
 
         // 不默认自动生成图表，显示精美的引导提示占位
+        this.renderPlaceholder();
+    }
+
+    showMulti(markedPoints) {
+        this.isMultiMode = true;
+        this.markedPoints = markedPoints;
+
+        this.coordsEl.textContent = `📍 多点对比分析（已选择 ${markedPoints.length} 个标点）`;
+
+        const checkedRadio = document.querySelector('input[name="chart-mode"]:checked');
+        this.mode = checkedRadio ? checkedRadio.value : 'annual';
+        this.updateRangeUI();
+
+        this.populateYearSelectors();
+        this.overlay.style.display = 'flex';
+
+        if (this.chartInstance) {
+            this.chartInstance.dispose();
+            this.chartInstance = null;
+        }
+
         this.renderPlaceholder();
     }
 
@@ -148,11 +172,16 @@ export class TemperatureChart {
     }
 
     fetchAndRender() {
+        if (this.isMultiMode) {
+            this.fetchAndRenderMulti();
+            return;
+        }
+
         if (this.currentLatIdx === null || this.currentLonIdx === null) return;
 
         // 仅在无缓存数据时才发起低效的 WebAssembly 距平切片提取
         if (!this.timeSeriesData) {
-            const data = this.fetchPointTimeSeries();
+            const data = this.fetchPointTimeSeriesFor(this.currentLatIdx, this.currentLonIdx);
             if (!data || data.length === 0) {
                 this.renderEmpty();
                 return;
@@ -168,11 +197,14 @@ export class TemperatureChart {
     }
 
     fetchPointTimeSeries() {
+        return this.fetchPointTimeSeriesFor(this.currentLatIdx, this.currentLonIdx);
+    }
+
+    fetchPointTimeSeriesFor(latIdx, lonIdx) {
         const app = this.app;
         if (!app.tempDataset || !app.climatology || !app.timeList) return null;
 
         const timeLen = app.timeList.length;
-        const { currentLatIdx: latIdx, currentLonIdx: lonIdx } = this;
 
         try {
             const tsData = app.tempDataset.slice([[0, timeLen], [latIdx, latIdx + 1], [lonIdx, lonIdx + 1]]);
@@ -205,6 +237,218 @@ export class TemperatureChart {
             console.error('时间序列数据提取失败:', e);
             return null;
         }
+    }
+
+    fetchAndRenderMulti() {
+        if (!this.markedPoints || this.markedPoints.length === 0) return;
+
+        this.multiTimeSeriesData = [];
+        this.markedPoints.forEach(p => {
+            const data = this.fetchPointTimeSeriesFor(p.latIdx, p.lonIdx);
+            if (data && data.length > 0) {
+                this.multiTimeSeriesData.push({
+                    point: p,
+                    data: data
+                });
+            }
+        });
+
+        if (this.multiTimeSeriesData.length === 0) {
+            this.renderEmpty();
+            return;
+        }
+
+        if (this.mode === 'annual') {
+            this.renderAnnualMulti();
+        } else {
+            this.renderMonthlyMulti();
+        }
+    }
+
+    renderAnnualMulti() {
+        const startYear = parseInt(this.startYearEl.value);
+        const endYear = parseInt(this.endYearEl.value);
+
+        const yearsSet = new Set();
+        this.multiTimeSeriesData.forEach(item => {
+            item.data.forEach(d => {
+                if (d.year >= startYear && d.year <= endYear) {
+                    yearsSet.add(d.year);
+                }
+            });
+        });
+        const years = Array.from(yearsSet).sort((a, b) => a - b);
+
+        if (years.length === 0) {
+            this.renderEmpty();
+            return;
+        }
+
+        const colors = ['#00f0ff', '#ff007f', '#ffeaa7', '#00ff88', '#a855f7', '#3b82f6', '#f97316'];
+        const seriesList = [];
+
+        this.multiTimeSeriesData.forEach((item, pIdx) => {
+            const yearMap = {};
+            item.data.forEach(d => {
+                if (d.year >= startYear && d.year <= endYear) {
+                    if (!yearMap[d.year]) yearMap[d.year] = { sum: 0, count: 0 };
+                    yearMap[d.year].sum += d.absoluteTemp;
+                    yearMap[d.year].count++;
+                }
+            });
+
+            const temps = years.map(y => {
+                const group = yearMap[y];
+                return (group && group.count > 0) ? +(group.sum / group.count).toFixed(2) : null;
+            });
+
+            const latStr = item.point.lat >= 0 ? `${item.point.lat.toFixed(1)}°N` : `${(-item.point.lat).toFixed(1)}°S`;
+            const lonStr = item.point.lon >= 0 ? `${item.point.lon.toFixed(1)}°E` : `${(-item.point.lon).toFixed(1)}°W`;
+
+            seriesList.push({
+                name: `P${item.point.id} (${latStr}, ${lonStr})`,
+                type: 'line',
+                data: temps,
+                smooth: true,
+                symbol: 'none',
+                lineStyle: { width: 2, color: colors[pIdx % colors.length] },
+                itemStyle: { color: colors[pIdx % colors.length] }
+            });
+        });
+
+        this.initChart();
+        this.chartInstance.setOption({
+            title: {
+                text: `多点年度平均温度对比趋势 (${startYear} - ${endYear})`,
+                textStyle: { color: '#e2e8f0', fontSize: 14, fontFamily: 'Orbitron' },
+                left: 'center',
+                top: 0
+            },
+            legend: {
+                data: seriesList.map(s => s.name),
+                textStyle: { color: '#94a3b8', fontSize: 10, fontFamily: 'Outfit' },
+                top: '9%',
+                left: 'center'
+            },
+            tooltip: {
+                trigger: 'axis',
+                backgroundColor: 'rgba(10,15,30,0.85)',
+                borderColor: 'rgba(0,240,255,0.3)',
+                borderWidth: 1,
+                textStyle: { color: '#e2e8f0', fontSize: 12 },
+                formatter: (params) => {
+                    let result = `${params[0].axisValue} 年<br/>`;
+                    params.forEach(p => {
+                        const val = p.value;
+                        const valStr = (val !== null && val !== undefined) ? `${val.toFixed(2)} °C` : '无数据';
+                        result += `<span style="display:inline-block;margin-right:5px;border-radius:10px;width:9px;height:9px;background-color:${p.color};"></span>${p.seriesName}: ${valStr}<br/>`;
+                    });
+                    return result;
+                }
+            },
+            grid: { left: '8%', right: '5%', top: '24%', bottom: '10%' },
+            xAxis: {
+                type: 'category',
+                data: years.map(String),
+                axisLabel: {
+                    color: '#94a3b8',
+                    interval: Math.max(0, Math.floor(years.length / 12) - 1),
+                    fontSize: 11
+                },
+                axisLine: { lineStyle: { color: 'rgba(0,240,255,0.15)' } },
+                axisTick: { lineStyle: { color: 'rgba(0,240,255,0.15)' } },
+                splitLine: { show: false }
+            },
+            yAxis: {
+                type: 'value',
+                name: '温度 (°C)',
+                nameTextStyle: { color: '#94a3b8', fontSize: 11 },
+                axisLabel: { color: '#94a3b8', fontSize: 11 },
+                scale: true,
+                splitLine: { lineStyle: { color: 'rgba(255,255,255,0.04)', type: 'dashed' } }
+            },
+            series: seriesList
+        });
+    }
+
+    renderMonthlyMulti() {
+        const targetYear = parseInt(this.targetYearEl.value);
+        const monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+
+        const colors = ['#00f0ff', '#ff007f', '#ffeaa7', '#00ff88', '#a855f7', '#3b82f6', '#f97316'];
+        const seriesList = [];
+
+        this.multiTimeSeriesData.forEach((item, pIdx) => {
+            const temps = [];
+            for (let m = 1; m <= 12; m++) {
+                const entry = item.data.find(d => d.year === targetYear && d.month === m);
+                temps.push(entry ? +entry.absoluteTemp.toFixed(2) : null);
+            }
+
+            const latStr = item.point.lat >= 0 ? `${item.point.lat.toFixed(1)}°N` : `${(-item.point.lat).toFixed(1)}°S`;
+            const lonStr = item.point.lon >= 0 ? `${item.point.lon.toFixed(1)}°E` : `${(-item.point.lon).toFixed(1)}°W`;
+
+            seriesList.push({
+                name: `P${item.point.id} (${latStr}, ${lonStr})`,
+                type: 'line',
+                data: temps,
+                smooth: true,
+                symbol: 'circle',
+                symbolSize: 6,
+                lineStyle: { width: 2, color: colors[pIdx % colors.length] },
+                itemStyle: { color: colors[pIdx % colors.length], borderColor: '#fff', borderWidth: 1 }
+            });
+        });
+
+        this.initChart();
+        this.chartInstance.setOption({
+            title: {
+                text: `${targetYear} 年 多点逐月温度变化对比`,
+                textStyle: { color: '#e2e8f0', fontSize: 14, fontFamily: 'Orbitron' },
+                left: 'center',
+                top: 0
+            },
+            legend: {
+                data: seriesList.map(s => s.name),
+                textStyle: { color: '#94a3b8', fontSize: 10, fontFamily: 'Outfit' },
+                top: '9%',
+                left: 'center'
+            },
+            tooltip: {
+                trigger: 'axis',
+                backgroundColor: 'rgba(10,15,30,0.85)',
+                borderColor: 'rgba(0,240,255,0.3)',
+                borderWidth: 1,
+                textStyle: { color: '#e2e8f0', fontSize: 12 },
+                formatter: (params) => {
+                    let result = `${params[0].axisValue}<br/>`;
+                    params.forEach(p => {
+                        const val = p.value;
+                        const valStr = (val !== null && val !== undefined) ? `${val.toFixed(2)} °C` : '无数据';
+                        result += `<span style="display:inline-block;margin-right:5px;border-radius:10px;width:9px;height:9px;background-color:${p.color};"></span>${p.seriesName}: ${valStr}<br/>`;
+                    });
+                    return result;
+                }
+            },
+            grid: { left: '8%', right: '5%', top: '24%', bottom: '10%' },
+            xAxis: {
+                type: 'category',
+                data: monthNames,
+                axisLabel: { color: '#94a3b8', fontSize: 11 },
+                axisLine: { lineStyle: { color: 'rgba(0,240,255,0.15)' } },
+                axisTick: { lineStyle: { color: 'rgba(0,240,255,0.15)' } },
+                splitLine: { show: false }
+            },
+            yAxis: {
+                type: 'value',
+                name: '温度 (°C)',
+                nameTextStyle: { color: '#94a3b8', fontSize: 11 },
+                axisLabel: { color: '#94a3b8', fontSize: 11 },
+                scale: true,
+                splitLine: { lineStyle: { color: 'rgba(255,255,255,0.04)', type: 'dashed' } }
+            },
+            series: seriesList
+        });
     }
 
     renderEmpty() {

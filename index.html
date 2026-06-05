@@ -92,6 +92,22 @@
             </div>
         </div>
 
+        <!-- 子面板 2.5: 多点温度分析 -->
+        <div class="panel-section" id="marker-panel">
+            <h3>多点温度分析</h3>
+            <div class="subtitle">Multi-point Marker Analytics</div>
+            <div class="control-group">
+                <div class="control-header">
+                    <span class="control-label">已选择标点</span>
+                    <span id="marker-count-val" class="control-value">0 个</span>
+                </div>
+            </div>
+            <div class="projection-toggle" style="margin-top: 8px; width: 100%; display: flex; gap: 8px; box-sizing: border-box;">
+                <button id="btn-generate-curve" class="toggle-btn" style="flex: 1; text-align: center;" disabled>分析曲线</button>
+                <button id="btn-clear-markers" class="toggle-btn" style="flex: 1; text-align: center;" disabled>清空标点</button>
+            </div>
+        </div>
+
         <!-- 子面板 3: 温度色阶卡 -->
         <div class="panel-section colorbar-section">
             <div class="colorbar-container">
@@ -110,7 +126,8 @@
 
     <!-- 底部状态显示提示 -->
     <div class="tips">
-        <span>左键拖拽旋转地球以观察全球温度流动</span>
+        <span>左键单击标点 / 拖动旋转</span>
+        <span>右键单击取消标点</span>
         <span>鼠标滚轮缩放视图</span>
         <span id="data-status">WASM 数据引擎就绪</span>
     </div>
@@ -127,13 +144,7 @@
         <div id="timeline-chart"></div>
     </div>
 
-    <!-- 右键上下文菜单 -->
-    <div id="context-menu" class="context-menu" style="display:none;">
-        <div class="context-menu-item" id="ctx-view-chart">
-            <span class="ctx-icon">📊</span>
-            <span>查看该位置温度变化曲线</span>
-        </div>
-    </div>
+
 
     <!-- 图表弹窗遮罩层 -->
     <div id="chart-overlay" class="chart-overlay" style="display:none;">
