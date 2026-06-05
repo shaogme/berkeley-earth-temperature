@@ -263,11 +263,16 @@ export class TemperatureChart {
         if (!app.tempDataset || !app.climatology || !app.timeList) return null;
 
         const timeLen = app.timeList.length;
+        const latLen = app.latLength || 180;
+        const lonLen = app.lonLength || 360;
+        const numGrid = latLen * lonLen;
+
+        const targetLatIdx = latLen === 180 ? latIdx : Math.floor(latIdx * latLen / 180);
+        const targetLonIdx = lonLen === 360 ? lonIdx : Math.floor(lonIdx * lonLen / 360);
 
         try {
-            const tsData = app.tempDataset.slice([[0, timeLen], [latIdx, latIdx + 1], [lonIdx, lonIdx + 1]]);
+            const tsData = app.tempDataset.slice([[0, timeLen], [targetLatIdx, targetLatIdx + 1], [targetLonIdx, targetLonIdx + 1]]);
             const result = [];
-            const numGrid = 180 * 360;
 
             for (let i = 0; i < timeLen; i++) {
                 const anomaly = tsData[i];
@@ -276,7 +281,7 @@ export class TemperatureChart {
                 if (isNaN(anomaly) || anomaly === null || anomaly < -99 || anomaly > 99) continue;
 
                 const climOffset = (month - 1) * numGrid;
-                const climVal = app.climatology[climOffset + latIdx * 360 + lonIdx];
+                const climVal = app.climatology[climOffset + targetLatIdx * lonLen + targetLonIdx];
 
                 if (isNaN(climVal) || climVal === null || climVal < -99 || climVal > 99) continue;
 

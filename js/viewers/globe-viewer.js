@@ -226,4 +226,10 @@ export class GlobeViewer extends BaseViewer {
     start() {
         this.animate();
     }
+
+    reloadBoundaries(url) {
+        if (this.boundariesManager) {
+            this.boundariesManager.reloadBoundaries(url);
+        }
+    }
 }

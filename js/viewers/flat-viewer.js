@@ -113,11 +113,13 @@ export class FlatViewer extends BaseViewer {
         this.scene.add(this.earth);
     }
 
-    initBoundaries() {
-        this.countryLabelsGroup = new THREE.Group();
-        this.scene.add(this.countryLabelsGroup);
+    initBoundaries(url) {
+        if (!this.countryLabelsGroup) {
+            this.countryLabelsGroup = new THREE.Group();
+            this.scene.add(this.countryLabelsGroup);
+        }
 
-        loadBoundariesGeoJSON()
+        loadBoundariesGeoJSON(url)
             .then(geojson => {
                 const vertices = [];
                 geojson.features.forEach(feature => {
@@ -160,6 +162,26 @@ export class FlatViewer extends BaseViewer {
                 this.boundaries.position.z = 0.01; // 稍微抬高避免 z-fighting
                 this.scene.add(this.boundaries);
             });
+    }
+
+    destroyBoundaries() {
+        if (this.boundaries) {
+            this.scene.remove(this.boundaries);
+            if (this.boundaries.geometry) this.boundaries.geometry.dispose();
+            if (this.boundaries.material) this.boundaries.material.dispose();
+            this.boundaries = null;
+        }
+        if (this.countryLabelsGroup) {
+            while (this.countryLabelsGroup.children.length > 0) {
+                const labelObj = this.countryLabelsGroup.children[0];
+                this.countryLabelsGroup.remove(labelObj);
+            }
+        }
+    }
+
+    reloadBoundaries(url) {
+        this.destroyBoundaries();
+        this.initBoundaries(url);
     }
 
     processPolygon(polygonCoords, vertices) {

@@ -14,8 +14,8 @@ export class GlobeBoundaries {
         this.initBoundaries();
     }
 
-    initBoundaries() {
-        loadBoundariesGeoJSON()
+    initBoundaries(url) {
+        loadBoundariesGeoJSON(url)
             .then(geojson => {
                 const vertices = [];
                 // 将半径设为几乎贴合地球表面，彻底消除视差带来的偏移
@@ -46,7 +46,7 @@ export class GlobeBoundaries {
 
                         if (!centroid) {
                             if (type === 'Polygon') {
-                                centroid = this.calculateCentroid(coordinates);
+                                  centroid = this.calculateCentroid(coordinates);
                             } else if (type === 'MultiPolygon') {
                                 let maxLen = 0;
                                 let largestPolygon = null;
@@ -88,6 +88,26 @@ export class GlobeBoundaries {
             .catch(error => {
                 console.error('Failed to load earth boundaries GeoJSON:', error);
             });
+    }
+
+    destroyBoundaries() {
+        if (this.boundaries) {
+            this.earth.remove(this.boundaries);
+            if (this.boundaries.geometry) this.boundaries.geometry.dispose();
+            if (this.boundaries.material) this.boundaries.material.dispose();
+            this.boundaries = null;
+        }
+        if (this.countryLabelsGroup) {
+            while (this.countryLabelsGroup.children.length > 0) {
+                const labelObj = this.countryLabelsGroup.children[0];
+                this.countryLabelsGroup.remove(labelObj);
+            }
+        }
+    }
+
+    reloadBoundaries(url) {
+        this.destroyBoundaries();
+        this.initBoundaries(url);
     }
 
     calculateCentroid(polygonCoords) {

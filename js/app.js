@@ -12,6 +12,8 @@ class App {
         this.timeList = []; // 存储 { year, month, idx, decYear }
         this.climatology = null; // 缓存气候态基准温度
         this.tempDataset = null; // 缓存温度距平数据集引用
+        this.latLength = 180;
+        this.lonLength = 360;
 
         // DOM 元素
         this.loadingOverlay = document.getElementById('loading-overlay');
@@ -45,6 +47,13 @@ class App {
         this.btn3D = document.getElementById('btn-3d');
         this.btn2D = document.getElementById('btn-2d');
 
+        // 数据集选择器 DOM
+        this.datasetSelectorModal = document.getElementById('dataset-selector-modal');
+        this.btnConfirmLoad = document.getElementById('btn-confirm-load');
+        this.btnReselectDataset = document.getElementById('btn-reselect-dataset');
+        this.rememberSettingsCheckbox = document.getElementById('remember-settings');
+        this.geojsonSelect = document.getElementById('geojson-select');
+
         this.initEvents();
         this.globeViewer.start();
         this.flatViewer.start();
@@ -52,8 +61,23 @@ class App {
         this.chart = new TemperatureChart(this);
         this.timelineViewer = new TimelineViewer(this);
 
-        // 启动 NetCDF 数据集异步加载与引擎初始化
-        this.initDataEngine();
+        // 检测是否存在记忆的数据集，进行按需初始加载
+        this.checkAndStart();
+    }
+
+    checkAndStart() {
+        const savedNC = localStorage.getItem('selected_nc_dataset');
+        const savedGeoJSON = localStorage.getItem('selected_geojson_dataset');
+
+        if (savedNC && savedGeoJSON) {
+            this.datasetSelectorModal.style.display = 'none';
+            this.loadingOverlay.style.display = 'flex';
+            this.loadingOverlay.style.opacity = '1';
+            this.initDataEngine(savedNC, savedGeoJSON);
+        } else {
+            this.loadingOverlay.style.display = 'none';
+            this.datasetSelectorModal.style.display = 'flex';
+        }
     }
 
     initEvents() {
@@ -82,12 +106,49 @@ class App {
             }
         });
         this.btnClearMarkers.addEventListener('click', () => this.clearAllMarkers());
+
+        // 绑定数据集选择按钮事件
+        this.btnConfirmLoad.addEventListener('click', () => {
+            const selectedNC = document.querySelector('input[name="nc-dataset"]:checked').value;
+            const selectedGeoJSON = this.geojsonSelect.value;
+            const remember = this.rememberSettingsCheckbox.checked;
+
+            if (remember) {
+                localStorage.setItem('selected_nc_dataset', selectedNC);
+                localStorage.setItem('selected_geojson_dataset', selectedGeoJSON);
+            } else {
+                localStorage.removeItem('selected_nc_dataset');
+                localStorage.removeItem('selected_geojson_dataset');
+            }
+
+            this.datasetSelectorModal.style.display = 'none';
+            this.loadingOverlay.style.display = 'flex';
+            this.loadingOverlay.style.opacity = '1';
+            this.loaderProgress.style.width = '0%';
+            this.loaderStatus.textContent = '准备载入数据...';
+
+            this.initDataEngine(selectedNC, selectedGeoJSON);
+        });
+
+        this.btnReselectDataset.addEventListener('click', () => {
+            const currentNC = this.currentNCUrl || 'data/Global_TAVG_Gridded/5deg.nc';
+            const currentGeoJSON = this.currentGeoJSONUrl || 'data/countries-land/countries-land-1m.geo.json';
+
+            const radioToSelect = document.querySelector(`input[name="nc-dataset"][value="${currentNC}"]`);
+            if (radioToSelect) radioToSelect.checked = true;
+            this.geojsonSelect.value = currentGeoJSON;
+
+            this.datasetSelectorModal.style.display = 'flex';
+        });
     }
 
     onMapLeftClick(coords) {
-        const idx = coords.latIdx * 360 + coords.lonIdx;
-        const isLand = this.landMask ? (this.landMask[idx] > 0.05) : true;
+        const targetLatIdx = this.latLength === 180 ? coords.latIdx : Math.floor(coords.latIdx * this.latLength / 180);
+        const targetLonIdx = this.lonLength === 360 ? coords.lonIdx : Math.floor(coords.lonIdx * this.lonLength / 360);
+        const srcIdx = targetLatIdx * this.lonLength + targetLonIdx;
+        const isLand = this.landMask ? (this.landMask[srcIdx] > 0.05) : true;
         
+        const idx = coords.latIdx * 360 + coords.lonIdx;
         if (!isLand || !this.currentAbsoluteTempArray || isNaN(this.currentAbsoluteTempArray[idx])) {
             console.log('Clicked on invalid temperature data (ocean/missing), ignoring marker.');
             return;
@@ -160,10 +221,36 @@ class App {
         }
     }
 
-    async initDataEngine() {
+    async initDataEngine(ncUrl, geojsonUrl) {
+        this.currentNCUrl = ncUrl;
+        this.currentGeoJSONUrl = geojsonUrl;
+
+        // 清理已有 WebAssembly VFS 句柄
+        if (this.ncFile) {
+            try {
+                this.ncFile.close();
+            } catch (e) {
+                console.error('关闭旧句柄异常:', e);
+            }
+            this.ncFile = null;
+        }
+
+        this.timeList = [];
+        this.climatology = null;
+        this.tempDataset = null;
+        this.currentAbsoluteTempArray = null;
+        this.currentAnomalyTempArray = null;
+        this.clearAllMarkers();
+
+        // 重新渲染新选择的地理边界精度
+        this.globeViewer.reloadBoundaries(geojsonUrl);
+        this.flatViewer.reloadBoundaries(geojsonUrl);
+
         try {
-            const ncUrl = 'Global_TAVG_Gridded_1deg.nc';
-            this.loaderStatus.textContent = '开始建立连接下载 1deg 核心数据集...';
+            const ncFileName = ncUrl.substring(ncUrl.lastIndexOf('/') + 1);
+            const titleEl = document.querySelector('.loader-title');
+            if (titleEl) titleEl.textContent = `载入 ${ncFileName}`;
+            this.loaderStatus.textContent = `开始建立连接下载 ${ncFileName} 数据集...`;
 
             const response = await fetch(ncUrl);
             if (!response.ok) {
@@ -171,7 +258,7 @@ class App {
             }
 
             const contentLength = response.headers.get('content-length');
-            const totalBytes = contentLength ? parseInt(contentLength, 10) : 427861980; // 默认 408MB
+            const totalBytes = contentLength ? parseInt(contentLength, 10) : (ncFileName.includes('5deg') ? 17657057 : 427861980);
 
             const reader = response.body.getReader();
             let receivedLength = 0;
@@ -198,34 +285,35 @@ class App {
             }
 
             this.loaderStatus.textContent = '正在初始化 WebAssembly HDF5 虚拟文件系统...';
-            // 确保 h5wasm 完全初始化
             await h5wasm.ready;
 
             const FS = h5wasm.FS;
-            FS.writeFile('Global_TAVG_Gridded_1deg.nc', allChunks);
+            FS.writeFile(ncFileName, allChunks);
 
             this.loaderStatus.textContent = '正在解析 NetCDF-4 气温数据集元数据...';
-            this.ncFile = new h5wasm.File('Global_TAVG_Gridded_1deg.nc', 'r');
+            this.ncFile = new h5wasm.File(ncFileName, 'r');
 
             // 读取坐标和变量
             const times = this.ncFile.get('time').value;
             const lats = this.ncFile.get('latitude').value;
             const lons = this.ncFile.get('longitude').value;
 
+            this.latLength = lats.length;
+            this.lonLength = lons.length;
+
             this.dataStatus.textContent = `WASM引擎加载完成 [纬度:${lats.length} 经度:${lons.length} 时间序列:${times.length}]`;
             console.log(`lats shape:`, lats.length, `lons shape:`, lons.length);
 
-            // 缓存常年气候态 (Climatology, 一般是 12, 180, 360 形状)
+            // 缓存常年气候态 (Climatology)
             const climDataset = this.ncFile.get('climatology');
             this.climatology = climDataset.value;
             this.tempDataset = this.ncFile.get('temperature');
             
-            // 缓存陆地遮罩 (land_mask, 一般是 180, 360 形状)
+            // 缓存陆地遮罩 (land_mask)
             const landMaskDataset = this.ncFile.get('land_mask');
             this.landMask = landMaskDataset.value;
 
             // 解析十进制时间序列，映射为年月日
-            // 1981.125 -> 1981年2月
             for (let i = 0; i < times.length; i++) {
                 const decYear = times[i];
                 const year = Math.floor(decYear);
@@ -282,17 +370,21 @@ class App {
         console.time('GlobalTempCalculation');
         this.loaderStatus.textContent = '正在利用 WebAssembly 加载引擎计算全球历史气温概览曲线...';
 
-        const numGrid = 180 * 360;
+        const latLen = this.latLength;
+        const lonLen = this.lonLength;
+        const numGrid = latLen * lonLen;
         const landGridIndices = [];
         const areaWeights = [];
         let totalWeight = 0;
 
-        // 1. 预先提取陆地格点的索引和面积权重 (根据纬度余弦值面积加权)
-        for (let latIdx = 0; latIdx < 180; latIdx++) {
-            const lat = latIdx - 90 + 0.5;
+        const latsData = this.ncFile.get('latitude').value;
+
+        // 1. 预先提取陆地格点的索引和面积权重
+        for (let latIdx = 0; latIdx < latLen; latIdx++) {
+            const lat = latsData[latIdx];
             const weight = Math.cos(lat * Math.PI / 180);
-            for (let lonIdx = 0; lonIdx < 360; lonIdx++) {
-                const idx = latIdx * 360 + lonIdx;
+            for (let lonIdx = 0; lonIdx < lonLen; lonIdx++) {
+                const idx = latIdx * lonLen + lonIdx;
                 const isLand = this.landMask ? (this.landMask[idx] > 0.05) : true;
                 if (isLand) {
                     landGridIndices.push(idx);
@@ -305,8 +397,8 @@ class App {
         if (landGridIndices.length === 0) {
             for (let i = 0; i < numGrid; i++) {
                 landGridIndices.push(i);
-                const latIdx = Math.floor(i / 360);
-                const lat = latIdx - 90 + 0.5;
+                const latIdx = Math.floor(i / lonLen);
+                const lat = latsData[latIdx];
                 const weight = Math.cos(lat * Math.PI / 180);
                 areaWeights.push(weight);
                 totalWeight += weight;
@@ -415,35 +507,43 @@ class App {
     renderGlobalTemperature(tIdx, month) {
         if (!this.tempDataset || !this.climatology) return;
 
-        // 使用 slice 获取当前月的距平值，省去加载全部时间轴的内存开销
-        // shape [time, lat, lon] = [times_len, 180, 360]
-        const tempSlice = this.tempDataset.slice([[tIdx, tIdx + 1], [0, 180], [0, 360]]);
+        const latLen = this.latLength;
+        const lonLen = this.lonLength;
+        const numGrid = latLen * lonLen;
 
-        const numGrid = 180 * 360;
-        const absoluteTemp = new Float32Array(numGrid);
-        const anomalyTemp = new Float32Array(numGrid);
+        // 使用 slice 获取当前月的距平值，省去加载全部时间轴的内存开销
+        const tempSlice = this.tempDataset.slice([[tIdx, tIdx + 1], [0, latLen], [0, lonLen]]);
+
+        const absoluteTemp = new Float32Array(180 * 360);
+        const anomalyTemp = new Float32Array(180 * 360);
 
         const climOffset = (month - 1) * numGrid;
 
-        for (let i = 0; i < numGrid; i++) {
-            const anomaly = tempSlice[i];
-            const isLand = this.landMask ? (this.landMask[i] > 0.05) : true;
-            
-            // 检查 NaN、极值填充值 (如 -9999 或 _FillValue) 并且仅渲染陆地格点
-            if (!isLand || isNaN(anomaly) || anomaly === null || anomaly < -99 || anomaly > 99) {
-                absoluteTemp[i] = NaN;
-                anomalyTemp[i] = NaN;
-            } else {
-                // 绝对温度 = 距平 (anomaly) + 常年该月气候态 (climatology)
-                const climVal = this.climatology[climOffset + i];
+        for (let latIdx = 0; latIdx < 180; latIdx++) {
+            const targetLatIdx = latLen === 180 ? latIdx : Math.floor(latIdx * latLen / 180);
+            for (let lonIdx = 0; lonIdx < 360; lonIdx++) {
+                const targetLonIdx = lonLen === 360 ? lonIdx : Math.floor(lonIdx * lonLen / 360);
+
+                const destIdx = latIdx * 360 + lonIdx;
+                const srcIdx = targetLatIdx * lonLen + targetLonIdx;
+
+                const anomaly = tempSlice[srcIdx];
+                const isLand = this.landMask ? (this.landMask[srcIdx] > 0.05) : true;
                 
-                // 同样检查气候态基准温度是否为异常的填充值
-                if (isNaN(climVal) || climVal === null || climVal < -99 || climVal > 99) {
-                    absoluteTemp[i] = NaN;
-                    anomalyTemp[i] = NaN;
+                // 检查 NaN 并仅渲染陆地格点
+                if (!isLand || isNaN(anomaly) || anomaly === null || anomaly < -99 || anomaly > 99) {
+                    absoluteTemp[destIdx] = NaN;
+                    anomalyTemp[destIdx] = NaN;
                 } else {
-                    absoluteTemp[i] = anomaly + climVal;
-                    anomalyTemp[i] = anomaly;
+                    const climVal = this.climatology[climOffset + srcIdx];
+                    
+                    if (isNaN(climVal) || climVal === null || climVal < -99 || climVal > 99) {
+                        absoluteTemp[destIdx] = NaN;
+                        anomalyTemp[destIdx] = NaN;
+                    } else {
+                        absoluteTemp[destIdx] = anomaly + climVal;
+                        anomalyTemp[destIdx] = anomaly;
+                    }
                 }
             }
         }

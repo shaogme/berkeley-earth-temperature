@@ -122,6 +122,15 @@
                 </div>
             </div>
         </div>
+
+        <!-- 子面板 4: 数据源设置 -->
+        <div class="panel-section">
+            <h3>数据源设置</h3>
+            <div class="subtitle">Dataset Configuration</div>
+            <div style="margin-top: 8px; width: 100%;">
+                <button id="btn-reselect-dataset" class="toggle-btn" style="width: 100%; text-align: center;">重新选择数据集</button>
+            </div>
+        </div>
     </div>
 
     <!-- 底部状态显示提示 -->
@@ -185,6 +194,74 @@
             <button class="chart-render-btn" id="chart-render-btn">生成图表</button>
 
             <div class="chart-container-wrapper" id="chart-container"></div>
+        </div>
+    </div>
+
+    <!-- 数据集选择弹窗 -->
+    <div id="dataset-selector-modal" style="display: none;">
+        <div class="selector-box">
+            <div class="selector-header">
+                <h2>系统数据集选择</h2>
+                <p>请选择温度与国家边界数据集组合以开启 3D 渲染引擎</p>
+            </div>
+            
+            <div class="selector-body">
+                <!-- 温度数据集 -->
+                <div class="selector-group">
+                    <label class="group-title">气温格点数据集 (NetCDF)</label>
+                    <div class="option-cards">
+                        <label class="option-card">
+                            <input type="radio" name="nc-dataset" value="data/Global_TAVG_Gridded/5deg.nc" checked>
+                            <div class="card-content">
+                                <div class="card-title">Low-Res 气温数据集</div>
+                                <div class="card-desc">分辨率: 5° × 5° 网格 (~17.6MB)</div>
+                                <div class="card-tag tag-fast">极速载入</div>
+                            </div>
+                        </label>
+                        <label class="option-card">
+                            <input type="radio" name="nc-dataset" value="data/Global_TAVG_Gridded/1deg.nc">
+                            <div class="card-content">
+                                <div class="card-title">High-Res 气温数据集</div>
+                                <div class="card-desc">分辨率: 1° × 1° 网格 (~427MB)</div>
+                                <div class="card-tag tag-slow">高精渲染 (加载较慢)</div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 边界数据集 -->
+                <div class="selector-group" style="margin-top: 24px;">
+                    <label class="group-title">国家陆地边界精度 (GeoJSON)</label>
+                    <div class="select-wrapper">
+                        <select id="geojson-select" class="premium-select">
+                            <option value="data/countries-land/countries-land-10km.geo.json">10km 分辨率 (约 1.0 MB) — 运行极流畅</option>
+                            <option value="data/countries-land/countries-land-5km.geo.json">5km 分辨率 (约 2.0 MB) — 推荐选择</option>
+                            <option value="data/countries-land/countries-land-2km5.geo.json">2.5km 分辨率 (约 4.8 MB)</option>
+                            <option value="data/countries-land/countries-land-1km.geo.json">1km 分辨率 (约 22.6 MB)</option>
+                            <option value="data/countries-land/countries-land-500m.geo.json">500m 精度 (约 52.2 MB)</option>
+                            <option value="data/countries-land/countries-land-250m.geo.json">250m 精度 (约 86.9 MB)</option>
+                            <option value="data/countries-land/countries-land-100m.geo.json">100m 精度 (约 125.9 MB)</option>
+                            <option value="data/countries-land/countries-land-50m.geo.json">50m 精度 (约 133.9 MB)</option>
+                            <option value="data/countries-land/countries-land-25m.geo.json">25m 精度 (约 141.0 MB)</option>
+                            <option value="data/countries-land/countries-land-10m.geo.json">10m 极高精度 (约 168.2 MB)</option>
+                            <option value="data/countries-land/countries-land-5m.geo.json">5m 极高精度 (约 178.7 MB)</option>
+                            <option value="data/countries-land/countries-land-2m5.geo.json">2.5m 极高精度 (约 188.2 MB)</option>
+                            <option value="data/countries-land/countries-land-1m.geo.json">1m 最高精度 (约 213.3 MB)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="selector-footer-options">
+                    <label class="remember-checkbox">
+                        <input type="checkbox" id="remember-settings" checked>
+                        <span>记住我的选择，下次自动载入</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="selector-footer">
+                <button id="btn-confirm-load" class="action-btn">载入系统数据</button>
+            </div>
         </div>
     </div>
 
