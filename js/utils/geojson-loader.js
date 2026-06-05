@@ -18,8 +18,17 @@ export function loadBoundariesGeoJSON(url = './countries-land-1m.geo.json') {
 
     loadPromise = fetch(url)
         .then(response => {
-            if (!response.ok) throw new Error('Network response was not ok');
+            if (!response.ok) throw new Error(`Local fetch status: ${response.status}`);
             return response.json();
+        })
+        .catch(localError => {
+            console.warn(`Failed to fetch GeoJSON locally from ${url}. Falling back to remote...`, localError);
+            const fileName = url.substring(url.lastIndexOf('/') + 1);
+            const remoteUrl = `https://github.com/shaogme/berkeley-earth-temperature/releases/download/countries-land/${fileName}`;
+            return fetch(remoteUrl).then(response => {
+                if (!response.ok) throw new Error(`Remote fetch status: ${response.status}`);
+                return response.json();
+            });
         })
         .then(geojson => {
             geojsonCache = geojson;

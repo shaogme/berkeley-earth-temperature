@@ -252,9 +252,19 @@ class App {
             if (titleEl) titleEl.textContent = `载入 ${ncFileName}`;
             this.loaderStatus.textContent = `开始建立连接下载 ${ncFileName} 数据集...`;
 
-            const response = await fetch(ncUrl);
-            if (!response.ok) {
-                throw new Error(`加载 NC 数据集失败，HTTP 状态码: ${response.status}`);
+            let response;
+            try {
+                response = await fetch(ncUrl);
+                if (!response.ok) {
+                    throw new Error(`Local fetch status: ${response.status}`);
+                }
+            } catch (localError) {
+                console.warn(`Failed to fetch NetCDF locally from ${ncUrl}. Falling back to remote...`, localError);
+                const remoteNcUrl = `https://github.com/shaogme/berkeley-earth-temperature/releases/download/Global_TAVG_Gridded/${ncFileName}`;
+                response = await fetch(remoteNcUrl);
+                if (!response.ok) {
+                    throw new Error(`加载 NC 数据集失败，本地与远程下载均不可用。远程状态码: ${response.status}`);
+                }
             }
 
             const contentLength = response.headers.get('content-length');
