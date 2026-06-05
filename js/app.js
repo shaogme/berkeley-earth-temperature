@@ -3,6 +3,8 @@ import { FlatViewer } from './viewers/flat-viewer.js';
 import { TemperatureChart } from './viewers/temperature-chart.js';
 import { TimelineViewer } from './viewers/timeline-viewer.js';
 
+const PROXY_BASE = 'https://berkeley-earth-temperature-proxy.shaog.workers.dev';
+
 class App {
     constructor() {
         this.globeViewer = new GlobeViewer();
@@ -259,8 +261,8 @@ class App {
                     throw new Error(`Local fetch status: ${response.status}`);
                 }
             } catch (localError) {
-                console.warn(`Failed to fetch NetCDF locally from ${ncUrl}. Falling back to remote...`, localError);
-                const remoteNcUrl = `https://github.com/shaogme/berkeley-earth-temperature/releases/download/Global_TAVG_Gridded/${ncFileName}`;
+                console.warn(`Failed to fetch NetCDF locally from ${ncUrl}. Falling back to remote proxy...`, localError);
+                const remoteNcUrl = `${PROXY_BASE}/Global_TAVG_Gridded/${ncFileName}`;
                 response = await fetch(remoteNcUrl);
                 if (!response.ok) {
                     throw new Error(`加载 NC 数据集失败，本地与远程下载均不可用。远程状态码: ${response.status}`);

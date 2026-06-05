@@ -1,3 +1,5 @@
+const PROXY_BASE = 'https://berkeley-earth-temperature-proxy.shaog.workers.dev';
+
 let geojsonCache = null;
 let loadPromise = null;
 let cachedUrl = null;
@@ -22,9 +24,9 @@ export function loadBoundariesGeoJSON(url = './countries-land-1m.geo.json') {
             return response.json();
         })
         .catch(localError => {
-            console.warn(`Failed to fetch GeoJSON locally from ${url}. Falling back to remote...`, localError);
+            console.warn(`Failed to fetch GeoJSON locally from ${url}. Falling back to remote proxy...`, localError);
             const fileName = url.substring(url.lastIndexOf('/') + 1);
-            const remoteUrl = `https://github.com/shaogme/berkeley-earth-temperature/releases/download/countries-land/${fileName}`;
+            const remoteUrl = `${PROXY_BASE}/countries-land/${fileName}`;
             return fetch(remoteUrl).then(response => {
                 if (!response.ok) throw new Error(`Remote fetch status: ${response.status}`);
                 return response.json();
